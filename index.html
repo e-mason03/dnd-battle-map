@@ -236,6 +236,104 @@ input[type=color] {
   background: none; border: 1px solid var(--border); border-radius: 3px; cursor: pointer;
 }
 
+/* INITIATIVE TRACKER */
+.init-toggle {
+  position: fixed;
+  top: 70px;
+  left: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--gold);
+  font-size: 18px;
+  cursor: pointer;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.init-toggle:hover { background: var(--bg); border-color: var(--gold); }
+
+.init-tracker {
+  position: fixed;
+  top: 70px;
+  left: 10px;
+  width: 220px;
+  max-height: calc(100vh - 160px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  z-index: 100;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+.init-tracker.open { display: flex; }
+
+.init-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--gold);
+}
+.init-close {
+  background: none;
+  border: none;
+  color: var(--text2);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.init-close:hover { color: var(--text); }
+
+.init-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.init-row {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  gap: 8px;
+  font-size: 12px;
+}
+.init-row.current {
+  background: rgba(255,200,50,0.12);
+  border-left: 3px solid var(--gold);
+}
+.init-row .init-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.init-row .init-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.init-row .init-hp { color: var(--text2); font-size: 10px; }
+
+.init-controls {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+.init-controls .btn { flex: 1; font-size: 11px; padding: 6px 8px; }
+
 /* FOOTER */
 footer {
   height: 28px;
@@ -414,6 +512,20 @@ footer {
   <span id="toolDisplay" style="color:var(--gold)">Tool: Grass</span>
 </footer>
 
+<button class="init-toggle" id="initToggleBtn" onclick="toggleInitTracker()" title="Toggle Initiative Tracker">⚔</button>
+
+<div class="init-tracker" id="initTracker">
+  <div class="init-header">
+    <span>Initiative Order</span>
+    <button class="init-close" onclick="toggleInitTracker()">×</button>
+  </div>
+  <div class="init-list" id="initList"></div>
+  <div class="init-controls">
+    <button class="btn" onclick="initPrev()">◀ Back</button>
+    <button class="btn active" onclick="initNext()">Next ▶</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="tokenModal">
   <div class="modal">
     <h3 id="modalTitle">Edit Token</h3>
@@ -428,6 +540,10 @@ footer {
     <div class="form-group">
       <label>Max HP</label>
       <input type="number" id="tokenMaxHpInput" min="1" max="9999" value="10">
+    </div>
+    <div class="form-group">
+      <label>Initiative</label>
+      <input type="number" id="tokenInitInput" min="0" max="999" value="0">
     </div>
     <div class="modal-btns">
       <button class="btn danger" onclick="deleteToken()">Delete</button>
@@ -1281,7 +1397,8 @@ canvas.addEventListener('drop', e => {
     type: dragCanvasToken.type,
     name: dragCanvasToken.label,
     hp: 10, maxHp: 10,
-    isPlayer: dragCanvasToken.isPlayer
+    isPlayer: dragCanvasToken.isPlayer,
+    initiative: 0
   };
   render();
   isDraggingFromSidebar = false;
@@ -1309,7 +1426,8 @@ function applyTool(row, col) {
         name: tDef?.label || activeTool.value,
         hp: 10,
         maxHp: 10,
-        isPlayer: tDef?.isPlayer || false
+        isPlayer: tDef?.isPlayer || false,
+        initiative: 0
       };
     }
   }
@@ -1423,6 +1541,80 @@ function togglePlace() {
 
 function updateGridColor(hex) { gridColorHex = hex; render(); }
 function updateCellSize(v) { baseCellSize = Math.max(20, Math.min(80, v)); render(); }
+
+// ============================================================
+// INITIATIVE TRACKER
+// ============================================================
+let currentTurn = 0;
+let initTrackerOpen = false;
+
+function toggleInitTracker() {
+  initTrackerOpen = !initTrackerOpen;
+  document.getElementById('initTracker').classList.toggle('open', initTrackerOpen);
+  document.getElementById('initToggleBtn').style.display = initTrackerOpen ? 'none' : 'flex';
+  if (initTrackerOpen) renderInitList();
+}
+
+function getTokensWithInit() {
+  const tokens = [];
+  for (let r = 0; r < mapData.height; r++) {
+    for (let c = 0; c < mapData.width; c++) {
+      const cell = mapData.cells[r][c];
+      if (cell.token && cell.token.initiative > 0) {
+        tokens.push({ ...cell.token, row: r, col: c });
+      }
+    }
+  }
+  return tokens.sort((a, b) => b.initiative - a.initiative);
+}
+
+function renderInitList() {
+  const list = document.getElementById('initList');
+  const tokens = getTokensWithInit();
+  list.innerHTML = '';
+
+  if (tokens.length === 0) {
+    list.innerHTML = '<div style="padding:12px;color:var(--text2);font-size:11px;text-align:center">No tokens with initiative.<br>Edit a token to set initiative.</div>';
+    return;
+  }
+
+  if (currentTurn >= tokens.length) currentTurn = 0;
+
+  tokens.forEach((tok, i) => {
+    const tDef = ALL_TOKENS.find(t => t.type === tok.type) || ALL_TOKENS[0];
+    const div = document.createElement('div');
+    div.className = 'init-row' + (i === currentTurn ? ' current' : '');
+    div.innerHTML = `
+      <div class="init-avatar" style="background:${tDef.color}">${tDef.abbr || tok.name?.[0] || '?'}</div>
+      <div class="init-name">${tok.name || tok.type}</div>
+      <div class="init-hp">${tok.hp}/${tok.maxHp}</div>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function initNext() {
+  const tokens = getTokensWithInit();
+  if (tokens.length === 0) return;
+  currentTurn = (currentTurn + 1) % tokens.length;
+  renderInitList();
+}
+
+function initPrev() {
+  const tokens = getTokensWithInit();
+  if (tokens.length === 0) return;
+  currentTurn = (currentTurn - 1 + tokens.length) % tokens.length;
+  renderInitList();
+}
+
+// Call renderInitList when tokens change
+const origSendWithSeq = sendWithSeq;
+sendWithSeq = function(data) {
+  origSendWithSeq(data);
+  if (['update_cell', 'move_token'].includes(data.type)) {
+    setTimeout(renderInitList, 50);
+  }
+};
 
 // ============================================================
 // UNDO / REDO
@@ -1539,6 +1731,7 @@ function openTokenModal(row, col) {
   document.getElementById('tokenNameInput').value = tok.name || '';
   document.getElementById('tokenHpInput').value = tok.hp ?? 10;
   document.getElementById('tokenMaxHpInput').value = tok.maxHp ?? 10;
+  document.getElementById('tokenInitInput').value = tok.initiative ?? 0;
   document.getElementById('tokenModal').classList.add('open');
 }
 function closeModal() {
@@ -1557,6 +1750,7 @@ function saveToken() {
   tok.name  = document.getElementById('tokenNameInput').value;
   tok.hp    = parseInt(document.getElementById('tokenHpInput').value) || 0;
   tok.maxHp = parseInt(document.getElementById('tokenMaxHpInput').value) || 10;
+  tok.initiative = parseInt(document.getElementById('tokenInitInput').value) || 0;
 
   sendWithSeq({
     type: 'update_cell',
