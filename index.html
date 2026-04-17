@@ -108,6 +108,7 @@ input[type=range] {
 }
 .canvas-wrap.pan-mode { cursor: grab; }
 .canvas-wrap.pan-mode:active { cursor: grabbing; }
+.canvas-wrap.move-mode { cursor: pointer; }
 #mapCanvas { position: absolute; top: 0; left: 0; }
 
 /* SIDEBAR */
@@ -322,6 +323,8 @@ footer {
     <input type="range" id="zoomSlider" min="0.25" max="3" step="0.05" value="1" oninput="setZoom(parseFloat(this.value))">
     <div class="sep"></div>
     <button class="btn" id="panBtn" onclick="togglePan()">⊕ Pan</button>
+    <button class="btn" id="moveBtn" onclick="toggleMove()">✲ Move</button>
+    <button class="btn" id="placeBtn" onclick="togglePlace()">⌧ Place</button>
     <div class="sep"></div>
     <button class="btn" onclick="undo()">↩</button>
     <button class="btn" onclick="redo()">↪</button>
@@ -392,7 +395,7 @@ footer {
       </div>
       <div class="section-title" style="margin-top:12px">Keyboard Shortcuts</div>
       <div style="color:var(--text2);font-size:11px;line-height:1.8">
-        <div><b style="color:var(--text)">Space</b> — Toggle pan mode</div>
+        <div><b style="color:var(--text)">Space</b> — Toggle mode</div>
         <div><b style="color:var(--text)">Ctrl+Z</b> — Undo</div>
         <div><b style="color:var(--text)">Ctrl+Y</b> — Redo</div>
         <div><b style="color:var(--text)">Ctrl+S</b> — Save</div>
@@ -438,7 +441,15 @@ footer {
 
 <script>
   const protocol = location.protocol === "https:" ? "wss" : "ws";
-const socket = new WebSocket(`${protocol}://${location.host}`);
+let socket = new WebSocket(`${protocol}://${location.host}`);
+let clientSeq = 0;
+let pendingUpdates = {};
+
+function sendWithSeq(data) {
+  data.clientSeq = ++clientSeq;
+  pendingUpdates[data.clientSeq] = data;
+  socket.send(JSON.stringify(data));
+}
 
 socket.onmessage = (event) => {
   const data = JSON.parse(event.data);
@@ -465,7 +476,63 @@ socket.onmessage = (event) => {
     mapData = data.state;
     render();
   }
+
+  if (data.type === 'cell_ack' || data.type === 'move_ack') {
+    delete pendingUpdates[data.clientSeq];
+  }
 };
+
+socket.onclose = () => {
+  console.log('WebSocket disconnected, reconnecting...');
+  setTimeout(connect, 1000);
+};
+
+socket.onerror = (err) => {
+  console.error('WebSocket error:', err);
+};
+
+const messageHandler = (event) => {
+  const data = JSON.parse(event.data);
+
+  if (data.type === 'init') {
+    mapData = data.state;
+    render();
+  }
+
+  if (data.type === 'update_cell') {
+    mapData.cells[data.row][data.col] = data.cell;
+    render();
+  }
+
+  if (data.type === 'move_token') {
+    const { from, to } = data;
+    mapData.cells[to.row][to.col].token =
+      mapData.cells[from.row][from.col].token;
+    mapData.cells[from.row][from.col].token = null;
+    render();
+  }
+
+  if (data.type === 'set_map') {
+    mapData = data.state;
+    render();
+  }
+
+  if (data.type === 'cell_ack' || data.type === 'move_ack') {
+    delete pendingUpdates[data.clientSeq];
+  }
+};
+
+socket.onmessage = messageHandler;
+
+const reconnect = () => {
+  console.log('WebSocket disconnected, reconnecting...');
+  socket = new WebSocket(`${protocol}://${location.host}`);
+  socket.onmessage = messageHandler;
+  socket.onclose = reconnect;
+  socket.onerror = (err) => console.error('WebSocket error:', err);
+};
+
+socket.onclose = reconnect;
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -542,6 +609,8 @@ let camera = { x: 0, y: 0 };
 let zoom = 1.0;
 let baseCellSize = 40;
 let isPanMode = false;
+let isMoveMode = false;
+let isPlaceMode = true;
 let isPainting = false;
 let isPanning = false;
 let panStart = null;
@@ -1101,14 +1170,17 @@ canvas.addEventListener('mousedown', e => {
   const { row, col } = canvasToCell(e.clientX-rect.left, e.clientY-rect.top);
   if (!isValid(row, col)) return;
 
-  if (e.detail === 2 && mapData.cells[row][col].token) {
-    openTokenModal(row, col); return;
+  // In Move mode, clicking a token starts drag; clicking empty does nothing
+  if (isMoveMode) {
+    if (mapData.cells[row][col].token) {
+      draggingTokenFrom = { row, col };
+    }
+    return;
   }
 
-  // If clicking on a cell with a token (non-token-tool mode), start drag
-  if (mapData.cells[row][col].token && activeTool.category !== 'token') {
-    draggingTokenFrom = { row, col };
-    return;
+  // Double-click opens token modal
+  if (e.detail === 2 && mapData.cells[row][col].token) {
+    openTokenModal(row, col); return;
   }
 
   pushUndo();
@@ -1167,13 +1239,12 @@ canvas.addEventListener('mouseup', e => {
       isValid(row, col) &&
       (row !== draggingTokenFrom.row || col !== draggingTokenFrom.col)
     ) {
-      // Only move if destination is empty
       if (!mapData.cells[row][col].token) {
-        socket.send(JSON.stringify({
+        sendWithSeq({
           type: 'move_token',
           from: draggingTokenFrom,
           to: { row, col }
-        }));
+        });
       }
     }
 
@@ -1244,12 +1315,12 @@ function applyTool(row, col) {
   }
 
   // send to server
-  socket.send(JSON.stringify({
+  sendWithSeq({
     type: 'update_cell',
     row,
     col,
     cell
-  }));
+  });
 }
 
 // ============================================================
@@ -1274,10 +1345,10 @@ function newMap() {
   render();
 
   // 🔥 Sync to server
-  socket.send(JSON.stringify({
+  sendWithSeq({
     type: 'set_map',
     state: mapData
-  }));
+  });
 }
 
 function clearMap() {
@@ -1292,10 +1363,10 @@ function clearMap() {
   render();
 
   // 🔥 Sync to server
-  socket.send(JSON.stringify({
+  sendWithSeq({
     type: 'set_map',
     state: mapData
-  }));
+  });
 }
 
 function resizeMap() {
@@ -1317,9 +1388,37 @@ function setZoom(v) { zoom = v; render(); }
 
 function togglePan() {
   isPanMode = !isPanMode;
+  if (isPanMode) isMoveMode = false;
+  isPlaceMode = !isPanMode && !isMoveMode;
   document.getElementById('panBtn').classList.toggle('active', isPanMode);
-  wrap.className = 'canvas-wrap' + (isPanMode ? ' pan-mode' : '');
-  document.getElementById('modeDisplay').textContent = isPanMode ? 'Pan Mode' : 'Place Mode';
+  document.getElementById('moveBtn').classList.toggle('active', isMoveMode);
+  document.getElementById('placeBtn').classList.toggle('active', isPlaceMode);
+  wrap.className = 'canvas-wrap' + (isPanMode ? ' pan-mode' : '') + (isMoveMode ? ' move-mode' : '');
+  document.getElementById('modeDisplay').textContent = isPanMode ? 'Pan Mode' : (isMoveMode ? 'Move Mode' : 'Place Mode');
+}
+
+function toggleMove() {
+  isMoveMode = !isMoveMode;
+  if (isMoveMode) isPanMode = false;
+  isPlaceMode = !isPanMode && !isMoveMode;
+  document.getElementById('panBtn').classList.toggle('active', isPanMode);
+  document.getElementById('moveBtn').classList.toggle('active', isMoveMode);
+  document.getElementById('placeBtn').classList.toggle('active', isPlaceMode);
+  wrap.className = 'canvas-wrap' + (isPanMode ? ' pan-mode' : '') + (isMoveMode ? ' move-mode' : '');
+  document.getElementById('modeDisplay').textContent = isMoveMode ? 'Move Mode' : 'Place Mode';
+}
+
+function togglePlace() {
+  isPlaceMode = !isPlaceMode;
+  if (isPlaceMode) {
+    isPanMode = false;
+    isMoveMode = false;
+  }
+  document.getElementById('panBtn').classList.toggle('active', isPanMode);
+  document.getElementById('moveBtn').classList.toggle('active', isMoveMode);
+  document.getElementById('placeBtn').classList.toggle('active', isPlaceMode);
+  wrap.className = 'canvas-wrap' + (isPanMode ? ' pan-mode' : '') + (isMoveMode ? ' move-mode' : '');
+  document.getElementById('modeDisplay').textContent = isPlaceMode ? 'Place Mode' : 'No Mode Selected';
 }
 
 function updateGridColor(hex) { gridColorHex = hex; render(); }
@@ -1447,7 +1546,6 @@ function closeModal() {
   editingTokenPos = null;
 }
 function saveToken() {
-  console.log("Sending token update", row, col, mapData.cells[row][col]);
   if (!editingTokenPos) return;
 
   const { row, col } = editingTokenPos;
@@ -1460,13 +1558,12 @@ function saveToken() {
   tok.hp    = parseInt(document.getElementById('tokenHpInput').value) || 0;
   tok.maxHp = parseInt(document.getElementById('tokenMaxHpInput').value) || 10;
 
-  // 🔥 SEND UPDATE TO SERVER
-  socket.send(JSON.stringify({
+  sendWithSeq({
     type: 'update_cell',
     row,
     col,
     cell: mapData.cells[row][col]
-  }));
+  });
 
   closeModal();
   render();
@@ -1479,12 +1576,12 @@ function deleteToken() {
   pushUndo();
   mapData.cells[row][col].token = null;
 
-  socket.send(JSON.stringify({
+  sendWithSeq({
     type: 'update_cell',
     row,
     col,
     cell: mapData.cells[row][col]
-  }));
+  });
 
   closeModal();
   render();
@@ -1546,7 +1643,17 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redo(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveMap(); }
-  if (e.key === ' ') { e.preventDefault(); togglePan(); }
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (!isPanMode && !isMoveMode) {
+      togglePan();
+    } else if (isPanMode) {
+      togglePan();
+      toggleMove();
+    } else {
+      toggleMove();
+    }
+  }
   if (e.key === '=' || e.key === '+') { zoom = Math.min(4, zoom + 0.1); document.getElementById('zoomSlider').value = zoom; render(); }
   if (e.key === '-') { zoom = Math.max(0.15, zoom - 0.1); document.getElementById('zoomSlider').value = zoom; render(); }
 });

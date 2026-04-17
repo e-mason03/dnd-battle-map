@@ -46,8 +46,15 @@ let gameState = {
   cells: []
 };
 
+let tokenSeq = 0;
+let clientSeq = {};
+
 function makeCell() {
   return { terrain: 'grass', elevation: 0, feature: null, token: null };
+}
+
+function generateTokenId() {
+  return `tok_${Date.now()}_${++tokenSeq}`;
 }
 
 function initMap(w, h) {
@@ -100,15 +107,23 @@ wss.on('connection', ws => {
 
     switch (data.type) {
       case 'update_cell': {
-        const { row, col, cell } = data;
+        const { row, col, cell, clientSeq: cSeq } = data;
         if (gameState.cells[row] && gameState.cells[row][col]) {
           gameState.cells[row][col] = cell;
+          const ackSeq = ++clientSeq[row + ',' + col] || 1;
+          ws.send(JSON.stringify({
+            type: 'cell_ack',
+            row,
+            col,
+            serverSeq: ackSeq,
+            clientSeq: cSeq
+          }));
         }
         break;
       }
 
       case 'move_token': {
-        const { from, to } = data;
+        const { from, to, clientSeq: cSeq } = data;
         if (
           gameState.cells[from.row]?.[from.col] &&
           gameState.cells[to.row]?.[to.col]
@@ -116,6 +131,14 @@ wss.on('connection', ws => {
           gameState.cells[to.row][to.col].token =
             gameState.cells[from.row][from.col].token;
           gameState.cells[from.row][from.col].token = null;
+          const ackSeq = ++clientSeq[to.row + ',' + to.col] || 1;
+          ws.send(JSON.stringify({
+            type: 'move_ack',
+            from,
+            to,
+            serverSeq: ackSeq,
+            clientSeq: cSeq
+          }));
         }
         break;
       }
