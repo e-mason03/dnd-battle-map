@@ -334,6 +334,61 @@ input[type=color] {
 }
 .init-controls .btn { flex: 1; font-size: 11px; padding: 6px 8px; }
 
+/* DICE ROLLER */
+.dice-roller {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+}
+.dice-roller select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 11px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.dice-roller select:focus { outline: none; border-color: var(--gold); }
+.dice-roller input {
+  width: 60px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 11px;
+  padding: 3px 6px;
+  text-align: center;
+}
+.dice-roller input:focus { outline: none; border-color: var(--gold); }
+.dice-roller .btn { font-size: 11px; padding: 4px 10px; }
+
+.dice-result {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--panel);
+  border: 2px solid var(--gold);
+  border-radius: 12px;
+  padding: 24px 40px;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--gold);
+  z-index: 200;
+  display: none;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.dice-result.open { display: block; }
+.dice-result .dice-breakdown {
+  font-size: 14px;
+  color: var(--text2);
+  font-weight: 400;
+  margin-top: 8px;
+}
+
 /* FOOTER */
 footer {
   height: 28px;
@@ -430,6 +485,19 @@ footer {
     <button class="btn" onclick="saveMap()">💾 Save</button>
     <button class="btn" onclick="loadMap()">📂 Load</button>
     <button class="btn" onclick="exportPNG()">🖼 PNG</button>
+    <div class="sep"></div>
+    <div class="dice-roller">
+      <input type="number" id="diceCount" min="1" max="10" value="1">
+      <select id="diceType">
+        <option value="4">d4</option>
+        <option value="6">d6</option>
+        <option value="8">d8</option>
+        <option value="10">d10</option>
+        <option value="12">d12</option>
+        <option value="20">d20</option>
+      </select>
+      <button class="btn" onclick="rollDice()">Roll</button>
+    </div>
   </div>
 </header>
 
@@ -524,6 +592,11 @@ footer {
     <button class="btn" onclick="initPrev()">◀ Back</button>
     <button class="btn active" onclick="initNext()">Next ▶</button>
   </div>
+</div>
+
+<div class="dice-result" id="diceResult">
+  <div id="diceTotal"></div>
+  <div class="dice-breakdown" id="diceBreakdown"></div>
 </div>
 
 <div class="modal-overlay" id="tokenModal">
@@ -1605,6 +1678,23 @@ function initPrev() {
   if (tokens.length === 0) return;
   currentTurn = (currentTurn - 1 + tokens.length) % tokens.length;
   renderInitList();
+}
+
+function rollDice() {
+  const count = Math.min(10, Math.max(1, parseInt(document.getElementById('diceCount').value) || 1));
+  const sides = parseInt(document.getElementById('diceType').value);
+  const rolls = [];
+  let total = 0;
+  for (let i = 0; i < count; i++) {
+    const roll = Math.floor(Math.random() * sides) + 1;
+    rolls.push(roll);
+    total += roll;
+  }
+  document.getElementById('diceTotal').textContent = total;
+  document.getElementById('diceBreakdown').textContent = count > 1 ? `${rolls.join(' + ')} = ${total}` : '';
+  const result = document.getElementById('diceResult');
+  result.classList.add('open');
+  setTimeout(() => result.classList.remove('open'), 2000);
 }
 
 // Call renderInitList when tokens change
