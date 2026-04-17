@@ -437,6 +437,35 @@ footer {
 <div class="drag-ghost" id="dragGhost"></div>
 
 <script>
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+const socket = new WebSocket(`${protocol}://${location.host}`);
+
+socket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  if (data.type === 'init') {
+    mapData = data.state;
+    render();
+  }
+
+  if (data.type === 'update_cell') {
+    mapData.cells[data.row][data.col] = data.cell;
+    render();
+  }
+
+  if (data.type === 'move_token') {
+    const { from, to } = data;
+    mapData.cells[to.row][to.col].token =
+      mapData.cells[from.row][from.col].token;
+    mapData.cells[from.row][from.col].token = null;
+    render();
+  }
+
+  if (data.type === 'set_map') {
+    mapData = data.state;
+    render();
+  }
+};
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -1119,23 +1148,42 @@ canvas.addEventListener('mousemove', e => {
 });
 
 canvas.addEventListener('mouseup', e => {
-  if (isPanning) { isPanning = false; panStart = null; return; }
+  // End panning
+  if (isPanning) {
+    isPanning = false;
+    panStart = null;
+    return;
+  }
+
+  // Handle token drag movement
   if (draggingTokenFrom) {
     const rect = canvas.getBoundingClientRect();
-    const { row, col } = canvasToCell(e.clientX-rect.left, e.clientY-rect.top);
-    if (isValid(row, col) && (row !== draggingTokenFrom.row || col !== draggingTokenFrom.col)) {
+    const { row, col } = canvasToCell(
+      e.clientX - rect.left,
+      e.clientY - rect.top
+    );
+
+    if (
+      isValid(row, col) &&
+      (row !== draggingTokenFrom.row || col !== draggingTokenFrom.col)
+    ) {
+      // Only move if destination is empty
       if (!mapData.cells[row][col].token) {
-        pushUndo();
-        mapData.cells[row][col].token = mapData.cells[draggingTokenFrom.row][draggingTokenFrom.col].token;
-        mapData.cells[draggingTokenFrom.row][draggingTokenFrom.col].token = null;
+        socket.send(JSON.stringify({
+          type: 'move_token',
+          from: draggingTokenFrom,
+          to: { row, col }
+        }));
       }
     }
+
     draggingTokenFrom = null;
-    render(); return;
+    return;
   }
+
+  // Stop painting
   isPainting = false;
 });
-
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
   const rect = canvas.getBoundingClientRect();
@@ -1175,6 +1223,7 @@ canvas.addEventListener('drop', e => {
 // ============================================================
 function applyTool(row, col) {
   const cell = mapData.cells[row][col];
+
   if (activeTool.category === 'terrain') {
     cell.terrain = activeTool.value;
   } else if (activeTool.category === 'elevation') {
@@ -1184,9 +1233,23 @@ function applyTool(row, col) {
   } else if (activeTool.category === 'token') {
     if (!cell.token) {
       const tDef = ALL_TOKENS.find(t => t.type === activeTool.value);
-      cell.token = { type: activeTool.value, name: tDef?.label || activeTool.value, hp: 10, maxHp: 10, isPlayer: tDef?.isPlayer || false };
+      cell.token = {
+        type: activeTool.value,
+        name: tDef?.label || activeTool.value,
+        hp: 10,
+        maxHp: 10,
+        isPlayer: tDef?.isPlayer || false
+      };
     }
   }
+
+  // send to server
+  socket.send(JSON.stringify({
+    type: 'update_cell',
+    row,
+    col,
+    cell
+  }));
 }
 
 // ============================================================
@@ -1194,24 +1257,45 @@ function applyTool(row, col) {
 // ============================================================
 function newMap() {
   if (!confirm('Create a new map? Unsaved changes will be lost.')) return;
+
   const w = parseInt(document.getElementById('mapW').value) || 20;
   const h = parseInt(document.getElementById('mapH').value) || 20;
+
   initMap(w, h);
-  undoStack = []; redoStack = [];
+
+  undoStack = [];
+  redoStack = [];
   camera = { x: 0, y: 0 };
   zoom = 1;
+
   document.getElementById('zoomSlider').value = 1;
+
   centerMap();
   render();
+
+  // 🔥 Sync to server
+  socket.send(JSON.stringify({
+    type: 'set_map',
+    state: mapData
+  }));
 }
 
 function clearMap() {
   if (!confirm('Clear all terrain, features, and tokens?')) return;
-  pushUndo();
-  for (let r = 0; r < mapData.height; r++)
-    for (let c = 0; c < mapData.width; c++)
+
+  for (let r = 0; r < mapData.height; r++) {
+    for (let c = 0; c < mapData.width; c++) {
       mapData.cells[r][c] = makeCell();
+    }
+  }
+
   render();
+
+  // 🔥 Sync to server
+  socket.send(JSON.stringify({
+    type: 'set_map',
+    state: mapData
+  }));
 }
 
 function resizeMap() {
@@ -1363,20 +1447,47 @@ function closeModal() {
   editingTokenPos = null;
 }
 function saveToken() {
+  console.log("Sending token update", row, col, mapData.cells[row][col]);
   if (!editingTokenPos) return;
-  const tok = mapData.cells[editingTokenPos.row][editingTokenPos.col].token;
+
+  const { row, col } = editingTokenPos;
+  const tok = mapData.cells[row][col].token;
   if (!tok) return;
+
   pushUndo();
-  tok.name   = document.getElementById('tokenNameInput').value;
-  tok.hp     = parseInt(document.getElementById('tokenHpInput').value) || 0;
-  tok.maxHp  = parseInt(document.getElementById('tokenMaxHpInput').value) || 10;
-  closeModal(); render();
+
+  tok.name  = document.getElementById('tokenNameInput').value;
+  tok.hp    = parseInt(document.getElementById('tokenHpInput').value) || 0;
+  tok.maxHp = parseInt(document.getElementById('tokenMaxHpInput').value) || 10;
+
+  // 🔥 SEND UPDATE TO SERVER
+  socket.send(JSON.stringify({
+    type: 'update_cell',
+    row,
+    col,
+    cell: mapData.cells[row][col]
+  }));
+
+  closeModal();
+  render();
 }
 function deleteToken() {
   if (!editingTokenPos) return;
+
+  const { row, col } = editingTokenPos;
+
   pushUndo();
-  mapData.cells[editingTokenPos.row][editingTokenPos.col].token = null;
-  closeModal(); render();
+  mapData.cells[row][col].token = null;
+
+  socket.send(JSON.stringify({
+    type: 'update_cell',
+    row,
+    col,
+    cell: mapData.cells[row][col]
+  }));
+
+  closeModal();
+  render();
 }
 document.getElementById('tokenModal').addEventListener('click', e => {
   if (e.target === document.getElementById('tokenModal')) closeModal();
