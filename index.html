@@ -381,6 +381,45 @@ input[type=color] {
   text-align: center;
   box-shadow: 0 8px 32px rgba(0,0,0,0.5);
 }
+
+/* 🎲 ANIMATED DICE DISPLAY */
+.dice-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  padding: 12px 0 8px;
+  min-height: 50px;
+}
+.die {
+  width: 42px; height: 42px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem; font-weight: 700; color: #fff;
+  border-radius: 8px; border: 2px solid rgba(255,255,255,0.3);
+  background: #333; position: relative; user-select: none;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+  transition: transform 0.1s;
+}
+.die.rolling { animation: tumble 0.5s ease-in-out infinite; }
+@keyframes tumble {
+  0% { transform: rotate(0deg) scale(0.9); }
+  25% { transform: rotate(18deg) scale(1.05); }
+  50% { transform: rotate(-18deg) scale(0.92); }
+  75% { transform: rotate(12deg) scale(1.02); }
+  100% { transform: rotate(0deg) scale(0.9); }
+}
+/* Die type visuals */
+.die[data-sides="4"]  { background: #8b5cf6; border-color: #6d28d9; border-radius: 12px 12px 4px 4px; }
+.die[data-sides="6"]  { background: #3b82f6; border-color: #2563eb; border-radius: 8px; }
+.die[data-sides="8"]  { background: #10b981; border-color: #059669; border-radius: 12px; }
+.die[data-sides="10"] { background: #f59e0b; border-color: #d97706; border-radius: 4px 12px 4px 12px; }
+.die[data-sides="12"] { background: #ec4899; border-color: #db2777; border-radius: 16px; }
+.die[data-sides="20"] { background: #ef4444; border-color: #dc2626; border-radius: 50%; }
+.die.nat20 { box-shadow: 0 0 18px #22c55e, 0 0 32px rgba(34,197,94,0.4); animation: pulse 1.5s ease-in-out 2; }
+.die.nat1  { box-shadow: 0 0 18px #ef4444, 0 0 32px rgba(239,68,68,0.4); animation: pulse 1.5s ease-in-out 2; }
+@keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+.dice-breakdown { font-size: 13px; color: var(--text2); margin-top: 4px; }
+
 .dice-result.open { display: block; }
 .dice-result .dice-breakdown {
   font-size: 14px;
@@ -487,6 +526,7 @@ footer {
     <button class="btn" onclick="exportPNG()">🖼 PNG</button>
     <div class="sep"></div>
     <div class="dice-roller">
+      <div id="diceDisplay" class="dice-display"></div>
       <input type="number" id="diceCount" min="1" max="10" value="1">
       <select id="diceType">
         <option value="4">d4</option>
@@ -494,7 +534,8 @@ footer {
         <option value="8">d8</option>
         <option value="10">d10</option>
         <option value="12">d12</option>
-        <option value="20">d20</option>
+        <option value="20" selected>d20</option>
+        <option value="100">d100</option>
       </select>
       <button class="btn" onclick="rollDice()">Roll</button>
     </div>
@@ -599,6 +640,8 @@ footer {
   <div class="dice-breakdown" id="diceBreakdown"></div>
 </div>
 
+<div id="diceRoller" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:150;display:none;background:rgba(0,0,0,0.85);"></div>
+
 <div class="modal-overlay" id="tokenModal">
   <div class="modal">
     <h3 id="modalTitle">Edit Token</h3>
@@ -627,6 +670,11 @@ footer {
 </div>
 
 <div class="drag-ghost" id="dragGhost"></div>
+
+<script src="libs/three.min.js"></script>
+<script src="libs/cannon.min.js"></script>
+<script src="libs/teal.js"></script>
+<script src="libs/dice.js"></script>
 
 <script>
   const protocol = location.protocol === "https:" ? "wss" : "ws";
@@ -816,6 +864,48 @@ let isDraggingFromSidebar = false;
 const dragGhostEl = document.getElementById('dragGhost');
 
 let editingTokenPos = null;
+
+let diceBox = null;
+
+function initDiceBox() {
+  const container = document.getElementById('diceRoller');
+  if (!diceBox && container) {
+    diceBox = new DICE.dice_box(container);
+  }
+  return diceBox;
+}
+
+function rollDice() {
+  const count = Math.min(10, Math.max(1, parseInt(document.getElementById('diceCount').value) || 1));
+  const sides = parseInt(document.getElementById('diceType').value);
+  const diceType = 'd' + sides;
+
+  const container = document.getElementById('diceRoller');
+  container.style.display = 'block';
+
+  const box = initDiceBox();
+  box.setDice(count + diceType);
+
+  const resultModal = document.getElementById('diceResult');
+  resultModal.classList.remove('open');
+
+  box.start_throw(
+    function beforeRoll(notation) {
+      document.getElementById('diceTotal').textContent = '...';
+      document.getElementById('diceBreakdown').textContent = '';
+      return null;
+    },
+    function afterRoll(notation) {
+      document.getElementById('diceTotal').textContent = notation.resultTotal;
+      document.getElementById('diceBreakdown').textContent = notation.resultString;
+      resultModal.classList.add('open');
+      setTimeout(function() {
+        container.style.display = 'none';
+        resultModal.classList.remove('open');
+      }, 3000);
+    }
+  );
+}
 
 // ============================================================
 // MAP INIT
@@ -1683,18 +1773,54 @@ function initPrev() {
 function rollDice() {
   const count = Math.min(10, Math.max(1, parseInt(document.getElementById('diceCount').value) || 1));
   const sides = parseInt(document.getElementById('diceType').value);
-  const rolls = [];
-  let total = 0;
+  const display = document.getElementById('diceDisplay');
+  const resultModal = document.getElementById('diceResult');
+  
+  // Clear previous dice
+  display.innerHTML = '';
+  resultModal.classList.remove('open');
+  
+  const results = [];
+  const duration = 1100; // ms animation
+  let completed = 0;
+
   for (let i = 0; i < count; i++) {
-    const roll = Math.floor(Math.random() * sides) + 1;
-    rolls.push(roll);
-    total += roll;
+    const dieEl = document.createElement('div');
+    dieEl.className = 'die rolling';
+    dieEl.dataset.sides = sides; // For CSS styling
+    dieEl.textContent = '?';
+    display.appendChild(dieEl);
+
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      // Rapid number cycling during animation
+      dieEl.textContent = Math.floor(Math.random() * sides) + 1;
+      
+      if (Date.now() - startTime >= duration) {
+        clearInterval(interval);
+        const final = Math.floor(Math.random() * sides) + 1;
+        dieEl.textContent = final;
+        dieEl.classList.remove('rolling');
+        
+        // Highlight critical rolls
+        if (final === sides) dieEl.classList.add('nat20');
+        else if (final === 1) dieEl.classList.add('nat1');
+        
+        results.push(final);
+        completed++;
+        
+        // All dice finished
+        if (completed === count) {
+          const total = results.reduce((a, b) => a + b, 0);
+          document.getElementById('diceTotal').textContent = total;
+          document.getElementById('diceBreakdown').textContent = 
+            count > 1 ? `${results.join(' + ')} = ${total}` : '';
+          resultModal.classList.add('open');
+          setTimeout(() => resultModal.classList.remove('open'), 2200);
+        }
+      }
+    }, 45); // Cycle numbers every 45ms for smooth animation
   }
-  document.getElementById('diceTotal').textContent = total;
-  document.getElementById('diceBreakdown').textContent = count > 1 ? `${rolls.join(' + ')} = ${total}` : '';
-  const result = document.getElementById('diceResult');
-  result.classList.add('open');
-  setTimeout(() => result.classList.remove('open'), 2000);
 }
 
 // Call renderInitList when tokens change
