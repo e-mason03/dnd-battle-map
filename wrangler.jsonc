@@ -1,9 +1,27 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "dnd-battle-map",
+  "main": "src/index.ts",
   "compatibility_date": "2026-04-20",
 
   "assets": {
-    "directory": "./public"
-  }
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BATTLE_MAP",
+        "class_name": "BattleMapDO"
+      }
+    ]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["BattleMapDO"]
+    }
+  ]
 }

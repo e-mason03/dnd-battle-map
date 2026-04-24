@@ -385,19 +385,19 @@ input[type=color] {
 /* 🎲 ANIMATED DICE DISPLAY */
 .dice-display {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  padding: 12px 0 8px;
-  min-height: 50px;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  padding: 0;
+  min-height: 0;
 }
 .die {
-  width: 42px; height: 42px;
+  width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.2rem; font-weight: 700; color: #fff;
-  border-radius: 8px; border: 2px solid rgba(255,255,255,0.3);
+  font-size: 0.8rem; font-weight: 700; color: #fff;
+  border-radius: 6px; border: 2px solid rgba(255,255,255,0.3);
   background: #333; position: relative; user-select: none;
-  box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
   transition: transform 0.1s;
 }
 .die.rolling { animation: tumble 0.5s ease-in-out infinite; }
@@ -409,11 +409,11 @@ input[type=color] {
   100% { transform: rotate(0deg) scale(0.9); }
 }
 /* Die type visuals */
-.die[data-sides="4"]  { background: #8b5cf6; border-color: #6d28d9; border-radius: 12px 12px 4px 4px; }
-.die[data-sides="6"]  { background: #3b82f6; border-color: #2563eb; border-radius: 8px; }
-.die[data-sides="8"]  { background: #10b981; border-color: #059669; border-radius: 12px; }
-.die[data-sides="10"] { background: #f59e0b; border-color: #d97706; border-radius: 4px 12px 4px 12px; }
-.die[data-sides="12"] { background: #ec4899; border-color: #db2777; border-radius: 16px; }
+.die[data-sides="4"]  { background: #8b5cf6; border-color: #6d28d9; border-radius: 8px 8px 3px 3px; }
+.die[data-sides="6"]  { background: #3b82f6; border-color: #2563eb; border-radius: 6px; }
+.die[data-sides="8"]  { background: #10b981; border-color: #059669; border-radius: 8px; }
+.die[data-sides="10"] { background: #f59e0b; border-color: #d97706; border-radius: 3px 8px 3px 8px; }
+.die[data-sides="12"] { background: #ec4899; border-color: #db2777; border-radius: 10px; }
 .die[data-sides="20"] { background: #ef4444; border-color: #dc2626; border-radius: 50%; }
 .die.nat20 { box-shadow: 0 0 18px #22c55e, 0 0 32px rgba(34,197,94,0.4); animation: pulse 1.5s ease-in-out 2; }
 .die.nat1  { box-shadow: 0 0 18px #ef4444, 0 0 32px rgba(239,68,68,0.4); animation: pulse 1.5s ease-in-out 2; }
@@ -685,48 +685,10 @@ let pendingUpdates = {};
 function sendWithSeq(data) {
   data.clientSeq = ++clientSeq;
   pendingUpdates[data.clientSeq] = data;
-  socket.send(JSON.stringify(data));
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(data));
+  }
 }
-
-socket.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-
-  if (data.type === 'init') {
-    mapData = data.state;
-    render();
-  }
-
-  if (data.type === 'update_cell') {
-    mapData.cells[data.row][data.col] = data.cell;
-    render();
-  }
-
-  if (data.type === 'move_token') {
-    const { from, to } = data;
-    mapData.cells[to.row][to.col].token =
-      mapData.cells[from.row][from.col].token;
-    mapData.cells[from.row][from.col].token = null;
-    render();
-  }
-
-  if (data.type === 'set_map') {
-    mapData = data.state;
-    render();
-  }
-
-  if (data.type === 'cell_ack' || data.type === 'move_ack') {
-    delete pendingUpdates[data.clientSeq];
-  }
-};
-
-socket.onclose = () => {
-  console.log('WebSocket disconnected, reconnecting...');
-  setTimeout(connect, 1000);
-};
-
-socket.onerror = (err) => {
-  console.error('WebSocket error:', err);
-};
 
 const messageHandler = (event) => {
   const data = JSON.parse(event.data);
@@ -739,6 +701,7 @@ const messageHandler = (event) => {
   if (data.type === 'update_cell') {
     mapData.cells[data.row][data.col] = data.cell;
     render();
+    setTimeout(renderInitList, 50);
   }
 
   if (data.type === 'move_token') {
@@ -747,6 +710,7 @@ const messageHandler = (event) => {
       mapData.cells[from.row][from.col].token;
     mapData.cells[from.row][from.col].token = null;
     render();
+    setTimeout(renderInitList, 50);
   }
 
   if (data.type === 'set_map') {
@@ -757,16 +721,31 @@ const messageHandler = (event) => {
   if (data.type === 'cell_ack' || data.type === 'move_ack') {
     delete pendingUpdates[data.clientSeq];
   }
+
+  if (data.type === 'roll_dice') {
+    showDiceRoll(data.count, data.sides, data.results);
+  }
 };
 
 socket.onmessage = messageHandler;
 
-const reconnect = () => {
+socket.onclose = () => {
   console.log('WebSocket disconnected, reconnecting...');
-  socket = new WebSocket(`${protocol}://${location.host}`);
-  socket.onmessage = messageHandler;
-  socket.onclose = reconnect;
-  socket.onerror = (err) => console.error('WebSocket error:', err);
+  setTimeout(connect, 1000);
+};
+
+socket.onerror = (err) => {
+  console.error('WebSocket error:', err);
+};
+
+const reconnect = () => {
+  setTimeout(() => {
+    console.log('WebSocket disconnected, reconnecting...');
+    socket = new WebSocket(`${protocol}://${location.host}`);
+    socket.onmessage = messageHandler;
+    socket.onclose = reconnect;
+    socket.onerror = (err) => console.error('WebSocket error:', err);
+  }, 1000);
 };
 
 socket.onclose = reconnect;
@@ -875,37 +854,7 @@ function initDiceBox() {
   return diceBox;
 }
 
-function rollDice() {
-  const count = Math.min(10, Math.max(1, parseInt(document.getElementById('diceCount').value) || 1));
-  const sides = parseInt(document.getElementById('diceType').value);
-  const diceType = 'd' + sides;
-
-  const container = document.getElementById('diceRoller');
-  container.style.display = 'block';
-
-  const box = initDiceBox();
-  box.setDice(count + diceType);
-
-  const resultModal = document.getElementById('diceResult');
-  resultModal.classList.remove('open');
-
-  box.start_throw(
-    function beforeRoll(notation) {
-      document.getElementById('diceTotal').textContent = '...';
-      document.getElementById('diceBreakdown').textContent = '';
-      return null;
-    },
-    function afterRoll(notation) {
-      document.getElementById('diceTotal').textContent = notation.resultTotal;
-      document.getElementById('diceBreakdown').textContent = notation.resultString;
-      resultModal.classList.add('open');
-      setTimeout(function() {
-        container.style.display = 'none';
-        resultModal.classList.remove('open');
-      }, 3000);
-    }
-  );
-}
+// Dead Three.js rollDice removed — using synced DOM version below
 
 // ============================================================
 // MAP INIT
@@ -1770,56 +1719,70 @@ function initPrev() {
   renderInitList();
 }
 
+// Roll dice — pre-generates results and sends over WebSocket so all
+// clients display the same outcome. Falls back to local-only if WS is down.
 function rollDice() {
   const count = Math.min(10, Math.max(1, parseInt(document.getElementById('diceCount').value) || 1));
   const sides = parseInt(document.getElementById('diceType').value);
+
+  // Pre-generate deterministic results
+  const results = [];
+  for (let i = 0; i < count; i++) {
+    results.push(Math.floor(Math.random() * sides) + 1);
+  }
+
+  // Send over WebSocket — the DO broadcasts to ALL clients (including sender)
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'roll_dice', count, sides, results }));
+  } else {
+    // Offline fallback — just show locally
+    showDiceRoll(count, sides, results);
+  }
+}
+
+// Display a dice roll animation with predetermined results
+function showDiceRoll(count, sides, results) {
   const display = document.getElementById('diceDisplay');
   const resultModal = document.getElementById('diceResult');
-  
-  // Clear previous dice
+
   display.innerHTML = '';
   resultModal.classList.remove('open');
-  
-  const results = [];
-  const duration = 1100; // ms animation
+
+  const duration = 1100;
   let completed = 0;
 
   for (let i = 0; i < count; i++) {
     const dieEl = document.createElement('div');
     dieEl.className = 'die rolling';
-    dieEl.dataset.sides = sides; // For CSS styling
+    dieEl.dataset.sides = sides;
     dieEl.textContent = '?';
     display.appendChild(dieEl);
 
+    const final = results[i];
     const startTime = Date.now();
     const interval = setInterval(() => {
-      // Rapid number cycling during animation
       dieEl.textContent = Math.floor(Math.random() * sides) + 1;
-      
+
       if (Date.now() - startTime >= duration) {
         clearInterval(interval);
-        const final = Math.floor(Math.random() * sides) + 1;
         dieEl.textContent = final;
         dieEl.classList.remove('rolling');
-        
-        // Highlight critical rolls
+
         if (final === sides) dieEl.classList.add('nat20');
         else if (final === 1) dieEl.classList.add('nat1');
-        
-        results.push(final);
+
         completed++;
-        
-        // All dice finished
+
         if (completed === count) {
           const total = results.reduce((a, b) => a + b, 0);
           document.getElementById('diceTotal').textContent = total;
-          document.getElementById('diceBreakdown').textContent = 
+          document.getElementById('diceBreakdown').textContent =
             count > 1 ? `${results.join(' + ')} = ${total}` : '';
           resultModal.classList.add('open');
           setTimeout(() => resultModal.classList.remove('open'), 2200);
         }
       }
-    }, 45); // Cycle numbers every 45ms for smooth animation
+    }, 45);
   }
 }
 
