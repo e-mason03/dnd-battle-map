@@ -3,234 +3,83 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>⚔ D&D Combat Map</title>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Fira+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<title>D&amp;D Table</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-<header>
-  <h1>⚔ Combat Map</h1>
-  <div class="toolbar">
-    <button class="btn" onclick="newMap()">✦ New</button>
-    <button class="btn danger" onclick="clearMap()">✕ Clear</button>
-    <div class="sep"></div>
-    <label>W</label>
-    <input type="number" id="mapW" value="20" min="5" max="60" style="width:44px">
-    <label>H</label>
-    <input type="number" id="mapH" value="20" min="5" max="60" style="width:44px">
-    <button class="btn" onclick="resizeMap()">Resize</button>
-    <div class="sep"></div>
-    <label>Zoom</label>
-    <input type="range" id="zoomSlider" min="0.25" max="3" step="0.05" value="1" oninput="setZoom(parseFloat(this.value))">
-    <div class="sep"></div>
-    <button class="btn" id="panBtn" onclick="togglePan()">⊕ Pan</button>
-    <button class="btn" id="moveBtn" onclick="toggleMove()">✲ Move</button>
-    <button class="btn" id="placeBtn" onclick="togglePlace()">⌧ Place</button>
-    <div class="sep"></div>
-    <button class="btn" onclick="undo()">↩</button>
-    <button class="btn" onclick="redo()">↪</button>
-    <div class="sep"></div>
-    <button class="btn" onclick="saveMap()">💾 Save</button>
-    <button class="btn" onclick="loadMap()">📂 Load</button>
-    <button class="btn" onclick="exportPNG()">🖼 PNG</button>
-    <button class="btn" onclick="triggerFileInput()">📁 Import</button>
-    <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileSelect(event)">
-    <div class="sep"></div>
-    <div class="dice-roller">
-      <div id="diceDisplay" class="dice-display"></div>
-      <input type="number" id="diceCount" min="1" max="10" value="1">
-      <select id="diceType">
-        <option value="4">d4</option>
-        <option value="6">d6</option>
-        <option value="8">d8</option>
-        <option value="10">d10</option>
-        <option value="12">d12</option>
-        <option value="20" selected>d20</option>
-        <option value="100">d100</option>
-      </select>
-      <button class="btn" onclick="rollDice()">Roll</button>
-    </div>
-  </div>
-</header>
-
-<div class="main">
-  <div class="canvas-wrap" id="canvasWrap">
-    <canvas id="mapCanvas"></canvas>
-  </div>
-
-  <div class="sidebar">
-    <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('terrain',this)">Terrain</button>
-      <button class="tab-btn" onclick="switchTab('elevation',this)">Elev.</button>
-      <button class="tab-btn" onclick="switchTab('features',this)">Feats</button>
-      <button class="tab-btn" onclick="switchTab('tokens',this)">Tokens</button>
-      <button class="tab-btn" onclick="switchTab('settings',this)">⚙</button>
+<!-- ============ Room gate ============ -->
+<div id="gate" class="gate">
+  <div class="gate-card">
+    <div class="gate-brand">
+      <div class="sigil">⚔</div>
+      <h1>D&amp;D Table</h1>
+      <p>Battle maps, hexcrawls, party sheets &amp; the chronicle of your campaign.</p>
     </div>
 
-    <div class="tab-content active" id="tab-terrain">
-      <div class="section-title">Terrain Type</div>
-      <div class="grid-2" id="terrainGrid"></div>
-      <div style="color:var(--text2);font-size:11px;margin-top:4px">Right-click cells to reset to Grass</div>
+    <div id="resume" class="resume" hidden>
+      <span>Continue <b id="resumeText"></b></span>
+      <button class="btn primary" id="resumeBtn" type="button">Rejoin</button>
     </div>
 
-    <div class="tab-content" id="tab-elevation">
-      <div class="section-title">Elevation Level</div>
-      <div class="grid-2" id="elevGrid"></div>
-      <div style="color:var(--text2);font-size:11px">Right-click to reset elevation to Flat</div>
+    <div class="gate-tabs">
+      <button class="gate-tab active" data-form="joinForm" type="button">Join a room</button>
+      <button class="gate-tab" data-form="createForm" type="button">Create a room</button>
     </div>
 
-    <div class="tab-content" id="tab-features">
-      <div class="section-title">Environmental Features</div>
-      <div class="grid-2" id="featuresGrid"></div>
-      <button class="btn" style="width:100%;margin-top:6px" onclick="selectFeature(null)">✕ Erase Feature</button>
-      <div style="color:var(--text2);font-size:11px;margin-top:8px">Right-click to remove feature</div>
-    </div>
+    <form id="joinForm" class="gate-form active" autocomplete="on">
+      <label class="field"><span>Room code</span><input id="joinCode" required maxlength="12" placeholder="e.g. K7QF2M" autocapitalize="characters" spellcheck="false"></label>
+      <label class="field"><span>Your name</span><input id="joinName" required maxlength="32" placeholder="What should the table call you?"></label>
+      <label class="field"><span>Password</span><input id="joinPassword" type="password" placeholder="Player or DM password"></label>
+      <button class="btn primary big" type="submit">Enter the table</button>
+    </form>
 
-    <div class="tab-content" id="tab-tokens">
-      <input class="search-box" type="text" id="tokenSearch" placeholder="🔍 Search tokens..." oninput="filterTokens(this.value)">
-      <div id="tokenList"></div>
-      <div style="color:var(--text2);font-size:11px;margin-top:8px">Drag to place · Double-click to edit · Drag on map to move</div>
-    </div>
+    <form id="createForm" class="gate-form" autocomplete="off">
+      <label class="field"><span>Campaign name</span><input id="createRoomName" maxlength="80" placeholder="Curse of the Crimson Keep"></label>
+      <label class="field"><span>Your name</span><input id="createName" required maxlength="32" placeholder="Dungeon Master"></label>
+      <label class="field"><span>DM password</span><input id="createDmPassword" type="password" required minlength="4" placeholder="Unlocks DM controls"></label>
+      <label class="field"><span>Player password <small>(optional)</small></span><input id="createPlayerPassword" type="password" placeholder="Leave blank to let anyone with the code join"></label>
+      <button class="btn primary big" type="submit">Create room</button>
+    </form>
 
-    <div class="tab-content" id="tab-settings">
-      <div class="section-title">Display</div>
-      <div class="setting-row">
-        <label>Show Coordinates</label>
-        <input type="checkbox" id="showCoords" checked onchange="render()">
-      </div>
-      <div class="setting-row">
-        <label>Grid Color</label>
-        <input type="color" id="gridColor" value="#ffffff" oninput="updateGridColor(this.value)">
-      </div>
-      <div class="setting-row">
-        <label>Grid Opacity</label>
-        <input type="range" id="gridOpacity" min="0.02" max="0.5" step="0.02" value="0.15" style="width:80px" oninput="gridAlpha=parseFloat(this.value);render()">
-      </div>
-      <div class="section-title" style="margin-top:12px">Cell Size</div>
-      <div class="setting-row">
-        <label>Base Size (px)</label>
-        <input type="number" id="cellSizeInput" value="40" min="20" max="80" style="width:60px" onchange="updateCellSize(parseInt(this.value))">
-      </div>
-      <div class="section-title" style="margin-top:12px">Keyboard Shortcuts</div>
-      <div style="color:var(--text2);font-size:11px;line-height:1.8">
-        <div><b style="color:var(--text)">Space</b> — Toggle mode</div>
-        <div><b style="color:var(--text)">Ctrl+Z</b> — Undo</div>
-        <div><b style="color:var(--text)">Ctrl+Y</b> — Redo</div>
-        <div><b style="color:var(--text)">Ctrl+S</b> — Save</div>
-        <div><b style="color:var(--text)">Scroll</b> — Zoom in/out</div>
-        <div><b style="color:var(--text)">Mid-click</b> — Pan</div>
-        <div><b style="color:var(--text)">Dbl-click</b> — Edit token</div>
-      </div>
-    </div>
+    <p id="gateError" class="gate-error" hidden></p>
   </div>
 </div>
 
-<footer>
-  <span id="coordDisplay">—</span>
-  <span id="zoomDisplay">Zoom: 100%</span>
-  <span id="modeDisplay" style="color:var(--accent)">Place Mode</span>
-  <span id="toolDisplay" style="color:var(--gold)">Tool: Grass</span>
-</footer>
+<!-- ============ App ============ -->
+<div id="app" class="app" hidden>
+  <header class="topbar">
+    <div class="brand"><span class="sigil">⚔</span><span id="campaignName">Campaign</span></div>
+    <nav class="nav">
+      <button class="nav-btn" data-view="battle">⚔ Battle</button>
+      <button class="nav-btn" data-view="hex">⬡ Hexcrawl</button>
+      <button class="nav-btn" data-view="party">🛡 Party</button>
+      <button class="nav-btn" data-view="journal">📜 Journal</button>
+      <button class="nav-btn" data-view="stats">📊 Stats</button>
+    </nav>
+    <div class="topbar-right">
+      <span id="presence" class="presence"></span>
+      <button id="roomCode" class="room-code" title="Copy invite link">——</button>
+      <span id="roleBadge" class="role-badge"></span>
+      <span id="connDot" class="conn-dot"></span>
+      <button id="settingsBtn" class="icon-btn" title="Room settings">⚙</button>
+    </div>
+  </header>
 
-<button class="init-toggle" id="initToggleBtn" onclick="toggleInitTracker()" title="Toggle Initiative Tracker">⚔</button>
-
-<div class="init-tracker" id="initTracker">
-  <div class="init-header">
-    <span>Initiative Order</span>
-    <button class="init-close" onclick="toggleInitTracker()">×</button>
-  </div>
-  <div class="init-list" id="initList"></div>
-  <div class="init-controls">
-    <button class="btn" onclick="initPrev()">◀ Back</button>
-    <button class="btn active" onclick="initNext()">Next ▶</button>
-  </div>
+  <main class="views">
+    <section id="view-battle" class="view view-canvas"></section>
+    <section id="view-hex" class="view view-canvas" hidden></section>
+    <section id="view-party" class="view view-page" hidden></section>
+    <section id="view-journal" class="view view-page" hidden></section>
+    <section id="view-stats" class="view view-page" hidden></section>
+  </main>
+  <footer class="statusbar"><span id="coordDisplay">—</span></footer>
 </div>
 
-<div class="dice-result" id="diceResult">
-  <div id="diceTotal"></div>
-  <div class="dice-breakdown" id="diceBreakdown"></div>
-</div>
+<div id="toasts" class="toasts"></div>
 
-<div id="diceRoller" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:150;display:none;background:rgba(0,0,0,0.85);"></div>
-
-<div class="modal-overlay" id="tokenModal">
-  <div class="modal">
-    <h3 id="modalTitle">Edit Token</h3>
-    <div class="form-group">
-      <label>Name</label>
-      <input type="text" id="tokenNameInput" placeholder="Token name...">
-    </div>
-    <div class="form-group">
-      <label>Current HP</label>
-      <input type="number" id="tokenHpInput" min="0" max="9999" value="10">
-    </div>
-    <div class="form-group">
-      <label>Max HP</label>
-      <input type="number" id="tokenMaxHpInput" min="1" max="9999" value="10">
-    </div>
-    <div class="form-group">
-      <label>Initiative</label>
-      <input type="number" id="tokenInitInput" min="0" max="999" value="0">
-    </div>
-    <div class="modal-btns">
-      <button class="btn danger" onclick="deleteToken()">Delete</button>
-      <button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn active" onclick="saveToken()">Save</button>
-    </div>
-  </div>
-</div>
-
-<div class="drag-ghost" id="dragGhost"></div>
-
-<!-- Vendor libs -->
-<script src="libs/three.min.js"></script>
-<script src="libs/cannon.min.js"></script>
-<script src="libs/teal.js"></script>
-<script src="libs/dice.js"></script>
-
-<!-- App (order matters: constants > state > net/render > ui > app) -->
-<script src="js/constants.js"></script>
-<script src="js/state.js"></script>
-<script src="js/map.js"></script>
-<script src="js/render.js"></script>
-<script src="js/net.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/canvasEvents.js"></script>
-<script src="js/toolbar.js"></script>
-<script src="js/saveLoad.js"></script>
-<script src="js/initiativeTracker.js"></script>
-<script>
-// File import helper
-function triggerFileInput() {
-  document.getElementById('fileInput').click();
-}
-
-function handleFileSelect(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const data = JSON.parse(e.target.result);
-      // Update local map first so user sees change immediately
-      mapData = data;
-      document.getElementById('mapW').value = mapData.width;
-      document.getElementById('mapH').value = mapData.height;
-      centerMap();
-      render();
-      // Broadcast to other clients
-      sendWithSeq({ type: 'set_map', state: mapData });
-    } catch (err) {
-      showToast('Failed to load map: ' + err.message, true);
-    }
-  };
-  reader.readAsText(file);
-}
-</script>
-<script src="js/diceRoller.js"></script>
-<script src="js/tokenModal.js"></script>
-<script src="js/app.js"></script>  <!-- always last -->
-
+<script type="module" src="js/main.js"></script>
 </body>
 </html>

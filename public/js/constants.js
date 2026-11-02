@@ -1,68 +1,124 @@
 // ============================================================
-// Constants — terrain, elevation, feature, and token definitions
+// Constants — terrain, elevation, features, tokens, conditions,
+// damage types, hexcrawl terrain & icons
 // ============================================================
 
-const TERRAINS = {
-  grass: { label: 'Grass', color: '#2d5c37', border: '#4a7c59' },
-  stone: { label: 'Stone', color: '#4a4a4a', border: '#6b6b6b' },
-  dirt:  { label: 'Dirt',  color: '#6b4a14', border: '#8b6914' },
-  sand:  { label: 'Sand',  color: '#b09060', border: '#d4b896' },
-  snow:  { label: 'Snow',  color: '#cccccc', border: '#e8e8e8' },
-  water: { label: 'Water', color: '#163c5a', border: '#2d5a7b' },
-  lava:  { label: 'Lava',  color: '#9e2800', border: '#cf4520' },
-  void:  { label: 'Void',  color: '#04040a', border: '#0a0a1f' },
+export const TERRAINS = {
+  grass: { label: 'Grass', color: '#2d5c37' },
+  stone: { label: 'Stone', color: '#4a4a4a' },
+  wood:  { label: 'Wood',  color: '#5b3d22' },
+  dirt:  { label: 'Dirt',  color: '#6b4a14' },
+  sand:  { label: 'Sand',  color: '#b09060' },
+  snow:  { label: 'Snow',  color: '#cccccc' },
+  water: { label: 'Water', color: '#163c5a', difficult: true },
+  lava:  { label: 'Lava',  color: '#9e2800' },
+  void:  { label: 'Void',  color: '#04040a' },
+  none:  { label: 'Clear', color: 'transparent' },
 };
 
-const ELEVATIONS = [
-  { level: 0, label: 'Flat',   bw: 0, bc: null,      marker: null,  isWall: false },
-  { level: 1, label: 'Low',    bw: 2, bc: '#7a7a7a', marker: null,  isWall: false },
-  { level: 2, label: 'Medium', bw: 3, bc: '#9a9a9a', marker: null,  isWall: false },
-  { level: 3, label: 'High',   bw: 4, bc: '#cccccc', marker: '\u25B2',  isWall: false },
-  { level: 4, label: 'Wall',   bw: 4, bc: '#222',    marker: null,  isWall: true  },
+export const ELEVATIONS = [
+  { level: 0, label: 'Flat',   bw: 0, bc: null,      marker: null },
+  { level: 1, label: 'Low',    bw: 2, bc: '#7a7a7a', marker: null },
+  { level: 2, label: 'Medium', bw: 3, bc: '#9a9a9a', marker: null },
+  { level: 3, label: 'High',   bw: 4, bc: '#cccccc', marker: '▲' },
+  { level: 4, label: 'Wall',   bw: 4, bc: '#222',    marker: null, isWall: true },
 ];
 
-const FEATURES = {
-  ravine:   { label: 'Ravine',   color: 'rgba(10,5,2,0.72)',   icon: '\u224B' },
-  pool:     { label: 'Pool',     color: 'rgba(20,70,110,0.65)', icon: '\u25C9' },
-  stream:   { label: 'Stream',   color: 'rgba(30,90,150,0.55)', icon: '\u301C' },
-  fire:     { label: 'Fire',     color: 'rgba(180,60,0,0.55)',  icon: '\uD83D\uDD25' },
-  web:      { label: 'Web',      color: 'rgba(180,180,180,0.35)',icon: '\u2726' },
-  fog:      { label: 'Fog',      color: 'rgba(140,140,155,0.55)',icon: '\u25CC' },
-  light:    { label: 'Light',    color: 'rgba(255,220,60,0.28)', icon: '\u2600' },
-  darkness: { label: 'Dark',     color: 'rgba(0,0,10,0.75)',    icon: '\u25FC' },
-  spike:    { label: 'Spikes',   color: 'rgba(110,110,110,0.6)', icon: '\u25B3' },
-  trap:     { label: 'Trap',     color: 'rgba(190,0,0,0.45)',   icon: '\u2715' },
+export const FEATURES = {
+  door:     { label: 'Door',    color: 'rgba(120,70,30,0.0)',  icon: '🚪', cover: 'total' },
+  doorOpen: { label: 'Open Door', color: 'rgba(120,70,30,0.0)', icon: '🔓' },
+  ravine:   { label: 'Ravine',  color: 'rgba(10,5,2,0.72)',    icon: '≋', difficult: true },
+  pool:     { label: 'Pool',    color: 'rgba(20,70,110,0.65)', icon: '◉', difficult: true },
+  stream:   { label: 'Stream',  color: 'rgba(30,90,150,0.55)', icon: '〜', difficult: true },
+  fire:     { label: 'Fire',    color: 'rgba(180,60,0,0.55)',  icon: '🔥' },
+  web:      { label: 'Web',     color: 'rgba(180,180,180,0.35)', icon: '✦', difficult: true },
+  rubble:   { label: 'Rubble',  color: 'rgba(90,80,70,0.55)',  icon: '⁂', difficult: true },
+  fog:      { label: 'Fog',     color: 'rgba(140,140,155,0.55)', icon: '◌' },
+  light:    { label: 'Light',   color: 'rgba(255,220,60,0.28)', icon: '☀' },
+  darkness: { label: 'Dark',    color: 'rgba(0,0,10,0.75)',    icon: '◼' },
+  spike:    { label: 'Spikes',  color: 'rgba(110,110,110,0.6)', icon: '△' },
+  trap:     { label: 'Trap',    color: 'rgba(190,0,0,0.45)',   icon: '✕' },
+  chest:    { label: 'Chest',   color: 'rgba(0,0,0,0)',        icon: '🧰' },
+
+  // Obstacles — `cover` is the most cover they can give; `blocks` makes them impassable
+  crate:    { label: 'Crate',    color: 'rgba(0,0,0,0)', icon: '📦', obstacle: true, cover: 'half', difficult: true },
+  barrel:   { label: 'Barrel',   color: 'rgba(0,0,0,0)', icon: '🛢️', obstacle: true, cover: 'half', difficult: true },
+  table:    { label: 'Table',    color: 'rgba(0,0,0,0)', icon: '▭', obstacle: true, cover: 'half', difficult: true },
+  lowWall:  { label: 'Low Wall', color: 'rgba(0,0,0,0)', icon: '🧱', obstacle: true, cover: 'half', difficult: true },
+  boulder:  { label: 'Boulder',  color: 'rgba(0,0,0,0)', icon: '🪨', obstacle: true, cover: 'three', blocks: true },
+  pillar:   { label: 'Pillar',   color: 'rgba(0,0,0,0)', icon: '🏛️', obstacle: true, cover: 'three', blocks: true },
+  tree:     { label: 'Tree',     color: 'rgba(0,0,0,0)', icon: '🌳', obstacle: true, cover: 'three', blocks: true },
+  statue:   { label: 'Statue',   color: 'rgba(0,0,0,0)', icon: '🗿', obstacle: true, cover: 'three', blocks: true },
 };
 
-const PLAYER_TOKENS = [
-  { type:'barbarian', label:'Barbarian', abbr:'Ba', color:'#c0392b', isPlayer:true },
-  { type:'bard',      label:'Bard',      abbr:'Bd', color:'#8e44ad', isPlayer:true },
-  { type:'cleric',    label:'Cleric',    abbr:'Cl', color:'#b7950b', isPlayer:true },
-  { type:'druid',     label:'Druid',     abbr:'Dr', color:'#1e8449', isPlayer:true },
-  { type:'fighter',   label:'Fighter',   abbr:'Fi', color:'#1f618d', isPlayer:true },
-  { type:'monk',      label:'Monk',      abbr:'Mo', color:'#148f77', isPlayer:true },
-  { type:'paladin',   label:'Paladin',   abbr:'Pa', color:'#d4ac0d', isPlayer:true },
-  { type:'ranger',    label:'Ranger',    abbr:'Ra', color:'#196f3d', isPlayer:true },
-  { type:'rogue',     label:'Rogue',     abbr:'Ro', color:'#616a6b', isPlayer:true },
-  { type:'sorcerer',  label:'Sorcerer',  abbr:'So', color:'#7d3c98', isPlayer:true },
-  { type:'warlock',   label:'Warlock',   abbr:'Wl', color:'#4a235a', isPlayer:true },
-  { type:'wizard',    label:'Wizard',    abbr:'Wi', color:'#1a5276', isPlayer:true },
+export const PLAYER_TOKENS = [
+  { type: 'barbarian', label: 'Barbarian', abbr: 'Ba', color: '#c0392b' },
+  { type: 'bard',      label: 'Bard',      abbr: 'Bd', color: '#8e44ad' },
+  { type: 'cleric',    label: 'Cleric',    abbr: 'Cl', color: '#b7950b' },
+  { type: 'druid',     label: 'Druid',     abbr: 'Dr', color: '#1e8449' },
+  { type: 'fighter',   label: 'Fighter',   abbr: 'Fi', color: '#1f618d' },
+  { type: 'monk',      label: 'Monk',      abbr: 'Mo', color: '#148f77' },
+  { type: 'paladin',   label: 'Paladin',   abbr: 'Pa', color: '#d4ac0d' },
+  { type: 'ranger',    label: 'Ranger',    abbr: 'Ra', color: '#196f3d' },
+  { type: 'rogue',     label: 'Rogue',     abbr: 'Ro', color: '#616a6b' },
+  { type: 'sorcerer',  label: 'Sorcerer',  abbr: 'So', color: '#7d3c98' },
+  { type: 'warlock',   label: 'Warlock',   abbr: 'Wl', color: '#4a235a' },
+  { type: 'wizard',    label: 'Wizard',    abbr: 'Wi', color: '#1a5276' },
+  { type: 'artificer', label: 'Artificer', abbr: 'Ar', color: '#9c640c' },
 ];
 
-const MONSTER_TOKENS = [
-  { type:'dragon',      label:'Dragon',      abbr:'Dg', color:'#7b241c', isPlayer:false },
-  { type:'giant',       label:'Giant',       abbr:'Gi', color:'#5d6d7e', isPlayer:false },
-  { type:'undead',      label:'Undead',      abbr:'Un', color:'#717d7e', isPlayer:false },
-  { type:'beast',       label:'Beast',       abbr:'Be', color:'#935116', isPlayer:false },
-  { type:'aberration',  label:'Aberration',  abbr:'Ab', color:'#4a235a', isPlayer:false },
-  { type:'construct',   label:'Construct',   abbr:'Co', color:'#566573', isPlayer:false },
-  { type:'elemental',   label:'Elemental',   abbr:'El', color:'#a04000', isPlayer:false },
-  { type:'fey',         label:'Fey',         abbr:'Fe', color:'#b03a8e', isPlayer:false },
-  { type:'fiend',       label:'Fiend',       abbr:'Fn', color:'#7b241c', isPlayer:false },
-  { type:'humanoid',    label:'Humanoid',    abbr:'Hu', color:'#424949', isPlayer:false },
-  { type:'monstrosity', label:'Monstrosity', abbr:'Mn', color:'#5b2333', isPlayer:false },
-  { type:'ooze',        label:'Ooze',        abbr:'Oz', color:'#1d8348', isPlayer:false },
-  { type:'plant',       label:'Plant',       abbr:'Pl', color:'#145a32', isPlayer:false },
+// Generic monsters come with a sensible default stat block
+export const MONSTER_TOKENS = [
+  { type: 'humanoid',    label: 'Bandit',      abbr: 'Hu', color: '#424949', hp: 11, ac: 12, actions: 'Scimitar | melee | 3 | 1d6+1 slashing | 5\nLight Crossbow | ranged | 3 | 1d8+1 piercing | 80' },
+  { type: 'goblin',      label: 'Goblin',      abbr: 'Gb', color: '#4d6b2f', hp: 7, ac: 15, actions: 'Scimitar | melee | 4 | 1d6+2 slashing | 5\nShortbow | ranged | 4 | 1d6+2 piercing | 80' },
+  { type: 'beast',       label: 'Wolf',        abbr: 'Be', color: '#935116', hp: 11, ac: 13, speed: 40, actions: 'Bite | melee | 4 | 2d4+2 piercing | 5' },
+  { type: 'undead',      label: 'Skeleton',    abbr: 'Un', color: '#717d7e', hp: 13, ac: 13, actions: 'Shortsword | melee | 4 | 1d6+2 piercing | 5\nShortbow | ranged | 4 | 1d6+2 piercing | 80' },
+  { type: 'monstrosity', label: 'Owlbear',     abbr: 'Mn', color: '#5b2333', hp: 59, ac: 13, actions: 'Beak | melee | 7 | 1d10+5 piercing | 5\nClaws | melee | 7 | 2d8+5 slashing | 5' },
+  { type: 'giant',       label: 'Ogre',        abbr: 'Gi', color: '#5d6d7e', hp: 59, ac: 11, actions: 'Greatclub | melee | 6 | 2d8+4 bludgeoning | 5\nJavelin | ranged | 6 | 2d6+4 piercing | 30' },
+  { type: 'dragon',      label: 'Young Dragon', abbr: 'Dg', color: '#7b241c', hp: 178, ac: 18, speed: 40, actions: 'Bite | melee | 10 | 2d10+6 piercing | 10\nClaw | melee | 10 | 2d6+6 slashing | 5\nFire Breath | save:dex | 17 | 16d6 fire | 30 | 15' },
+  { type: 'aberration',  label: 'Aberration',  abbr: 'Ab', color: '#4a235a', hp: 40, ac: 14, actions: 'Tentacle | melee | 5 | 2d6+3 bludgeoning | 10\nMind Blast | save:int | 13 | 3d8 psychic | 60 | 15' },
+  { type: 'construct',   label: 'Construct',   abbr: 'Co', color: '#566573', hp: 33, ac: 18, actions: 'Slam | melee | 4 | 1d6+2 bludgeoning | 5' },
+  { type: 'elemental',   label: 'Elemental',   abbr: 'El', color: '#a04000', hp: 102, ac: 13, actions: 'Touch | melee | 6 | 2d6+3 fire | 5' },
+  { type: 'fey',         label: 'Fey',         abbr: 'Fe', color: '#b03a8e', hp: 22, ac: 15, actions: 'Thorn Dart | ranged | 5 | 1d8+3 piercing | 60' },
+  { type: 'fiend',       label: 'Fiend',       abbr: 'Fn', color: '#7b241c', hp: 45, ac: 15, actions: 'Claw | melee | 6 | 2d6+4 slashing | 5\nHellfire | spell | 5 | 3d6 fire | 60' },
+  { type: 'ooze',        label: 'Ooze',        abbr: 'Oz', color: '#1d8348', hp: 22, ac: 8, speed: 10, actions: 'Pseudopod | melee | 3 | 1d6+1 acid | 5' },
+  { type: 'plant',       label: 'Plant',       abbr: 'Pl', color: '#145a32', hp: 30, ac: 12, actions: 'Vine Lash | melee | 4 | 1d8+2 bludgeoning | 10' },
+  { type: 'npc',         label: 'NPC',         abbr: 'NP', color: '#2e6b8a', hp: 10, ac: 10, actions: 'Club | melee | 2 | 1d4 bludgeoning | 5' },
 ];
 
-const ALL_TOKENS = [...PLAYER_TOKENS, ...MONSTER_TOKENS];
+export const ALL_TOKENS = [...PLAYER_TOKENS, ...MONSTER_TOKENS];
+export const tokenDef = type => ALL_TOKENS.find(t => t.type === type) || MONSTER_TOKENS[0];
+
+export const CONDITIONS = [
+  'blinded', 'charmed', 'deafened', 'frightened', 'grappled', 'incapacitated', 'invisible',
+  'paralyzed', 'petrified', 'poisoned', 'prone', 'restrained', 'stunned', 'unconscious',
+  'concentrating', 'blessed', 'hasted', 'raging', 'half cover', 'three-quarters cover', 'dead',
+];
+
+export const DAMAGE_COLORS = {
+  fire: '#ff7a1a', cold: '#7fd7ff', lightning: '#ffe94d', thunder: '#9db4ff', acid: '#9cff3a',
+  poison: '#5fd35f', necrotic: '#9b59b6', radiant: '#ffe9a6', force: '#ff5ce1', psychic: '#ff7ab8',
+  slashing: '#f2f2f2', piercing: '#e6e6e6', bludgeoning: '#d9d0c0', healing: '#58ff9a',
+};
+
+export const HEX_TERRAINS = {
+  plains:    { label: 'Plains',    color: '#7d9b4c' },
+  grassland: { label: 'Grassland', color: '#93b25a' },
+  forest:    { label: 'Forest',    color: '#2f6b3a' },
+  jungle:    { label: 'Jungle',    color: '#1e5a2a' },
+  hills:     { label: 'Hills',     color: '#9a8a55' },
+  mountains: { label: 'Mountains', color: '#7b746a' },
+  swamp:     { label: 'Swamp',     color: '#4a5d3a' },
+  desert:    { label: 'Desert',    color: '#d6b46a' },
+  tundra:    { label: 'Tundra',    color: '#c9d6db' },
+  water:     { label: 'Water',     color: '#2e5f8a' },
+  deep:      { label: 'Deep Sea',  color: '#1b3d63' },
+  badlands:  { label: 'Badlands',  color: '#9c5a3a' },
+  farmland:  { label: 'Farmland',  color: '#b4a24e' },
+};
+
+export const HEX_ICONS = {
+  city: '🏰', village: '🏘️', tower: '🗼', ruins: '🏛️', cave: '🕳️', dungeon: '💀', camp: '⛺',
+  temple: '⛩️', port: '⚓', portal: '🌀', treasure: '💎', danger: '⚠️', lair: '🐉', shrine: '🕯️',
+  mine: '⛏️', inn: '🍺', quest: '❗', tree: '🌳',
+};
