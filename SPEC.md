@@ -1,150 +1,99 @@
-# D&D Combat Map - Specification
+# D&D Table — Specification
 
-## Project Overview
-- **Project Name**: dnd-combat-map
-- **Type**: Local web application (single HTML file with embedded CSS/JS)
-- **Core Functionality**: Top-down 2D grid-based combat map for D&D sessions with terrain, tokens, and environmental features
-- **Target Users**: D&D players and Dungeon Masters
+All-in-one virtual tabletop for a home D&D group: tactical battle map, hexcrawl
+overland map, party sheets imported from D&D Beyond, a campaign journal and fun stats.
+Runs on Cloudflare Workers + one Durable Object per room.
 
-## UI/UX Specification
+## Running
 
-### Layout Structure
-- **Header**: App title, toolbar with map controls (40px height)
-- **Main Area**: Full remaining viewport - the canvas grid
-- **Sidebar** (right, 280px): Tabbed panel for terrain, tokens, features, settings
-- **Footer**: Coordinate display, zoom level (28px height)
-
-### Visual Design
-- **Color Palette**:
-  - Background: `#1a1a2e` (deep navy)
-  - Panel Background: `#16213e` (darker blue)
-  - Panel Border: `#0f3460` (muted blue)
-  - Accent: `#e94560` (crimson)
-  - Secondary Accent: `#f5a623` (gold)
-  - Text Primary: `#eaeaea`
-  - Text Secondary: `#a0a0a0`
-  - Grid Lines: `rgba(255,255,255,0.15)`
-
-- **Typography**:
-  - Font Family: `"Cinzel", serif` for headers, `"Fira Sans", sans-serif` for UI
-  - Header: 18px bold
-  - UI Labels: 13px
-  - Small Text: 11px
-
-- **Spacing**: 8px base unit, panels use 12px padding
-
-### Components
-
-#### Grid System
-- Default: 20x20 grid (configurable)
-- Cell size: 40px (zoomable 20-80px)
-- Grid lines visible with subtle styling
-- Coordinate labels on edges (A1, B2, etc.)
-
-#### Terrain Types (click to place on cells)
-| Terrain | Color | Icon |
-|---------|-------|------|
-| Grass | `#4a7c59` | simple blade pattern |
-| Stone | `#6b6b6b` | cracked stone |
-| Dirt | `#8b6914` | dotted earth |
-| Sand | `#d4b896` | speckled |
-| Snow | `#e8e8e8` | snowflake |
-| Water | `#2d5a7b` | wave pattern |
-| Lava | `#cf4520` | flame pattern |
-| Void | `#0a0a0f` | abyss |
-
-#### Elevation Levels (shown as subtle shading/walls)
-- Level 0: Flat (no indicator)
-- Level 1: Low (thin border `#7a7a7a`)
-- Level 2: Medium (medium border `#9a9a9a`)
-- Level 3: High (thick border `#bbbbbb` + "▲" marker)
-- Wall: Solid black border with brick pattern
-
-#### Environmental Features
-| Feature | Visual | Effect |
-|---------|--------|--------|
-| Ravine | Dark trench with depth | Difficult terrain |
-| Water Pool | Blue with ripple | Difficult terrain |
-| Stream | Flowing blue line | Difficult terrain |
-| Fire | Orange/red animated glow | Damage zone |
-| Web | White strands | Difficult terrain |
-| Fog | Gray overlay | Concealment |
-| Light | Yellow glow | Bright light source |
-| Darkness | Black overlay | Dim/darkness |
-| Spike | Gray triangles | Hazard |
-| Trap | Red X marker | Hazard |
-
-#### Token System
-- Circular tokens (36px diameter within cell)
-- Player classes: Barbarian, Bard, Cleric, Druid, Fighter, Monk, Paladin, Ranger, Rogue, Sorcerer, Warlock, Wizard
-- Monster types: Dragon, Giant, Undead, Beast, Aberration, Construct, Elemental, Fey, Fiend, Humanoid, Monstrosity, Ooze, Plant
-- Each type has distinct icon and color coding
-- Health bar beneath token
-- Name label optional
-
-#### Toolbar Controls
-- New Map / Clear Map buttons
-- Grid size input (width x height)
-- Zoom slider
-- Pan mode / Place mode toggle
-- Undo / Redo buttons
-
-#### Sidebar Tabs
-1. **Terrain**: Grid of terrain type buttons
-2. **Elevation**: Level 0-3 and Wall buttons
-3. **Features**: Grid of environmental feature buttons
-4. **Tokens**: Searchable list of tokens, drag to place
-5. **Settings**: Grid size, cell size, grid color, show coordinates toggle
-
-### Interactions
-- **Left Click**: Place selected terrain/feature/elevation
-- **Right Click**: Remove terrain/feature/elevation from cell
-- **Click + Drag**: Paint multiple cells
-- **Token Placement**: Drag from sidebar onto grid
-- **Pan**: Middle mouse or spacebar + drag
-- **Zoom**: Mouse wheel or slider
-
-## Functionality Specification
-
-### Core Features
-1. Dynamic grid rendering with configurable dimensions
-2. Terrain painting with click and drag
-3. Elevation level assignment per cell
-4. Environmental feature placement
-5. Token management (add, move, remove, edit HP)
-6. Zoom and pan navigation
-7. Undo/redo stack (last 50 actions)
-8. Save/load map to localStorage
-9. Export as PNG
-
-### Data Structure
-```javascript
-cell = {
-  terrain: string,
-  elevation: number, // 0-3
-  feature: string | null,
-  token: { type, name, hp, maxHp, isPlayer } | null
-}
-map = {
-  width: number,
-  height: number,
-  cells: Cell[][]
-}
+```
+npm install
+npm run dev      # wrangler dev → http://localhost:8787
+npm run check    # unit tests for the shared reducer, dice, hex math, DDB import
+npm run deploy   # wrangler deploy
 ```
 
-### Edge Cases
-- Prevent placing tokens on occupied cells
-- Handle window resize gracefully
-- Maintain scroll position on tab switches
+## Architecture
 
-## Acceptance Criteria
-1. Grid renders with correct dimensions on load
-2. All terrain types can be painted and display correctly
-3. All elevation levels display with distinct visuals
-4. All features render with appropriate styling
-5. Tokens can be dragged, placed, moved, and deleted
-6. Zoom affects entire map view
-7. Pan allows viewing off-screen areas
-8. Undo/redo works for all actions
-9. Map persists in localStorage
-10. Export produces valid PNG image
+| Piece | Where | Notes |
+|---|---|---|
+| Worker router | `src/index.ts` | `/api/rooms/*` → room Durable Object, everything else → static `public/` |
+| Room Durable Object | `src/index.ts` (`BattleMapDO`) | SQLite tables: `kv` (state sections), `sessions`, `files` + `file_chunks` (images, 1 MB chunks, 12 MB max) |
+| Shared reducer | `public/js/core/ops.js` | Imported by **both** the Worker and the browser. Every change is an *op*; `applyOp` is deterministic (dice are rolled client-side and travel inside the op). Also holds permissions (`canApply`) and player redaction. |
+| Client | `public/js/` | Plain ES modules, no build step. `store.js` (state + pub/sub), `net.js` (API + WebSocket), `views/*` |
+
+### Sync model
+Clients apply their own ops optimistically and send them; the room validates
+(`canApply`), applies, persists the touched sections, acks the sender and fans the op
+out. Players receive a redacted stream (`playerMessages`): hidden tokens, hidden NPCs,
+DM notes and fogged hexes never reach a player socket.
+
+Players only get exact HP / AC / saves for player characters and tokens a player
+controls; every other creature reaches them as a rough `health` state (unhurt, wounded,
+bloodied, near death, down). Because of that, attacks carry only raw dice
+(`resolveAction`) and the reducer decides hits and saves against the real numbers.
+The DM's actions apply instantly; a player's actions round-trip through the room, which
+answers with an animation-only copy of the op plus a redacted `patch` (tokens,
+characters, combat, stats, new log entries). The log never records a monster's AC.
+
+### Room gate
+Create a room → 6-character code, DM password (required) and player password
+(optional). Joining with the DM password grants DM; with the player password grants
+player. Passwords are PBKDF2-SHA256 hashed; sessions are random tokens. Failed joins
+are throttled (8 per minute per room).
+
+## Features
+
+**Battle map** — terrain / elevation / walls / feature painting, background image
+upload with grid fitting, saved map library, PNG and JSON export, v1 JSON import.
+BG3-style play: select a token, hover to preview a 5e-costed path (difficult terrain,
+walls and enemies block), click to move (animated). The hotbar shows HP, AC, speed
+left, action/bonus pips, spell slots and actions (hotkeys 1–9). Pick an action → range
+box, attack bonus or save DC on hover, AoE circle for area spells → dice resolve and
+animate for everyone (slash, arrow, spell orb, explosion, heal sparkles, floating
+numbers, crits, shake). Initiative bar, rounds, dead combatants skipped, End Turn (E),
+advantage/disadvantage, Dash, conditions, hidden tokens, Alt-click ping.
+
+**Cover** (`core/cover.js`, DMG grid variant) — lines run from the attacker's best corner
+to every corner of the target's space: 1–2 blocked → half cover (+2 AC / DEX saves),
+3–4 → three-quarters (+5), all blocked by walls → total (can't be targeted). Walls and
+closed doors block fully; obstacles cap at their own level (crate, barrel, table, low
+wall → half and difficult terrain; boulder, pillar, tree, statue → three-quarters and
+impassable); other creatures give half. Area effects measure cover from their origin
+point. While aiming, targets show a ½ / ¾ / ✕ shield and a coloured line of sight,
+and the tooltip notes the cover bonus. DMs can add `half cover` /
+`three-quarters cover` conditions for cover the map doesn't show.
+
+**Player rolls** (`ui/rollWindow.js`) — when a player confirms targets, a roll window
+opens: roll to hit (two d20s with advantage/disadvantage), the room answers HIT / MISS /
+CRITICAL without revealing AC (`check` message → `checkAttack`), then roll damage for
+the hits (crits double the dice) and Strike. Save spells, auto-hit spells and heals are
+a single damage/healing roll; targets' saves are rolled for them. The window can be
+cancelled only before the first die is rolled. The DM's rolls stay instant.
+
+**Action line format** (tokens, NPCs, manual characters):
+`Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | dice type | range ft | radius ft | flags`
+with flags `bonus`, `slot:N`, `pact`, `targets:N`, `nohalf`.
+
+**Hexcrawl** — flat/pointy hex grid, terrain + icon + label painting, per-hex public
+and DM notes, map-image upload with size/offset/scale alignment, fog of war, party
+marker travel (distance in hexes and miles, auto-reveal, logged to the adventure log),
+day counter.
+
+**Party** — import from D&D Beyond by character link (fetched through the room; the
+sheet must be Public) or by uploading/pasting the v5 character JSON; re-sync keeps
+live HP and conditions. Cards: HP (damage/heal/temp), AC, speed, initiative, passive
+perception, ability scores, clickable spell & pact slots, conditions, death saves,
+inspiration, short/long rest, player claiming.
+
+**Journal** — adventure log (session recaps, notes, and automatic events: travel,
+days, level-ups, deaths, NPCs met, encounters ended), searchable/filterable combat
+log, encounter history (rounds, participants, damage dealt, kills, DM notes), NPC
+registry (attitude, location, portrait, secrets, stat block, spawn on the map).
+
+**Stats** — sessions, encounters, rounds, kills, downs, miles, days, dice rolled;
+awards (Butcher, Biggest Hit, Field Medic, Grim Reaper, Sharpshooter, Blessed/Cursed
+Dice, Nemesis…); leaderboards; a full numbers table; per-player dice luck.
+
+**Dice tray** — build any pool; rolls broadcast to the table and feed the dice-luck
+stats; the DM can roll secretly.

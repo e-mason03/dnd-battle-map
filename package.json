@@ -1,11 +1,12 @@
 {
-  "name": "dnd-combat-map",
+  "name": "dnd-table",
   "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
+  "description": "All-in-one D&D table: battle map, hexcrawl, party sheets, journal and stats on Cloudflare Workers",
+  "main": "src/index.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "node --test test/*.test.js"
   },
   "repository": {
     "type": "git",
@@ -14,12 +15,12 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/e-mason03/dnd-battle-map/issues"
   },
   "homepage": "https://github.com/e-mason03/dnd-battle-map#readme",
-  "dependencies": {
-    "ws": "^8.20.0"
+  "devDependencies": {
+    "wrangler": "^4.156.2"
   }
 }
