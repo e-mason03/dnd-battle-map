@@ -233,6 +233,61 @@ test('D&D Beyond import derives the numbers a sheet shows', () => {
   assert.throws(() => parseDdbCharacter({ hello: 1 }));
 });
 
+test('inventory: add, use, give, stash and permissions', () => {
+  const s = withParty();
+  const EVE = { name: 'Eve', role: 'player' };
+  const potion = { id: 'p1', name: 'Potion of Healing', cat: 'consumable', qty: 3 };
+  assert.equal(canApply(op({ type: 'party.item', owner: 'c1', item: potion }), PLAYER, s), true);
+  assert.notEqual(canApply(op({ type: 'party.item', owner: 'c1', item: potion }), EVE, s), true);
+  assert.equal(canApply(op({ type: 'party.item', owner: 'party', item: potion }), EVE, s), true, 'anyone can use the party stash');
+  assert.equal(canApply(op({ type: 'party.itemMove', from: 'party', to: 'c1', itemId: 'x' }), EVE, s), true);
+  assert.notEqual(canApply(op({ type: 'party.itemMove', from: 'c1', to: 'party', itemId: 'p1' }), EVE, s), true);
+
+  applyOp(s, op({ type: 'party.item', owner: 'c1', item: potion }));
+  applyOp(s, op({ type: 'party.item', owner: 'c1', item: { ...potion, qty: 2 } }));
+  assert.deepEqual(s.party.chars.c1.inventory.map(i => [i.id, i.qty]), [['p1', 2]], 'upsert by id');
+
+  // Splitting a stack into the stash, then merging into a matching stack
+  applyOp(s, op({ type: 'party.itemMove', from: 'c1', to: 'party', itemId: 'p1', qty: 1 }));
+  assert.equal(s.party.chars.c1.inventory[0].qty, 1);
+  assert.equal(s.party.items.length, 1);
+  assert.equal(s.party.items[0].cat, 'consumable', 'category survives the move');
+  applyOp(s, op({ type: 'party.itemMove', from: 'c1', to: 'party', itemId: 'p1' }));
+  assert.equal(s.party.chars.c1.inventory.length, 0);
+  assert.deepEqual(s.party.items.map(i => i.qty), [2]);
+
+  applyOp(s, op({ type: 'party.itemRemove', owner: 'party', itemId: s.party.items[0].id }));
+  assert.equal(s.party.items.length, 0);
+
+  // Rooms saved before inventories existed have no party.items
+  delete s.party.items;
+  applyOp(s, op({ type: 'party.item', owner: 'party', item: { id: 'k', name: 'Crypt key', cat: 'quest', qty: 1 } }));
+  assert.equal(s.party.items[0].name, 'Crypt key');
+});
+
+test('D&D Beyond inventory import is categorized and re-sync keeps table-added items', () => {
+  const ch = parseDdbCharacter(DDB);
+  const cat = name => ch.inventory.find(i => i.name === name)?.cat;
+  assert.equal(cat('Chain Mail'), 'armor');
+  assert.equal(cat('Shield'), 'armor');
+  assert.equal(cat('Mace'), 'weapon');
+  assert.equal(cat('Ring of Protection'), 'gear');
+  assert.ok(ch.inventory.find(i => i.name === 'Chain Mail').equipped);
+
+  const s = initialState();
+  applyOp(s, op({ type: 'party.upsertChar', char: ch }));
+  applyOp(s, op({ type: 'party.item', owner: ch.id, item: { id: 'mine', name: 'Strange idol', cat: 'quest', qty: 1 } }));
+  applyOp(s, op({ type: 'party.upsertChar', char: parseDdbCharacter(DDB), keepLive: true }));
+  const inv = s.party.chars[ch.id].inventory;
+  assert.equal(inv.filter(i => i.name === 'Mace').length, 1, 'imported gear replaced, not duplicated');
+  assert.ok(inv.some(i => i.id === 'mine'));
+
+  // Saving from the sheet editor (no inventory field) keeps the bag
+  const { inventory, ...rest } = s.party.chars[ch.id];
+  applyOp(s, op({ type: 'party.upsertChar', char: { ...rest, ac: 20 } }));
+  assert.equal(s.party.chars[ch.id].inventory.length, inv.length);
+});
+
 test('turn order skips the dead', () => {
   const s = withParty();
   applyOp(s, op({ type: 'battle.addToken', token: { id: 'gob2', name: 'Goblin 2', col: 3, row: 1, hp: 7, maxHp: 7, conditions: [] } }));

@@ -138,6 +138,7 @@ export function parseDdbCharacter(raw) {
     inspiration: !!d.inspiration,
     gold: safe(() => Math.round((d.currencies.gp || 0) + (d.currencies.pp || 0) * 10 + (d.currencies.ep || 0) / 2 + (d.currencies.sp || 0) / 10), 0),
     color: CLASS_COLORS[classes[0]?.name.toLowerCase()] || '#2e6b8a',
+    inventory: safe(() => inventoryItems(d), []),
     importedAt: Date.now(),
   };
   ch.actions = [
@@ -146,6 +147,27 @@ export function parseDdbCharacter(raw) {
     ...safe(() => spellActions(d, classes, casterInfo, level), []),
   ];
   return ch;
+}
+
+const CONSUMABLE_NAME = /\b(ration|torch|oil|antitoxin|healer'?s kit|holy water|alchemist'?s fire|caltrops|ball bearings)\b/i;
+
+function itemCategory(def) {
+  if ([1, 2, 3, 4].includes(def.armorTypeId)) return 'armor';
+  if (def.filterType === 'Weapon' || def.damage?.diceString) return 'weapon';
+  if (def.isConsumable || ['Potion', 'Scroll'].includes(def.filterType) || def.subType === 'Ammunition' || CONSUMABLE_NAME.test(def.name)) return 'consumable';
+  return 'gear';
+}
+
+function inventoryItems(d) {
+  return (d.inventory || []).filter(it => it.definition?.name).map(it => {
+    const def = it.definition;
+    const rarity = def.rarity && def.rarity !== 'Common' ? def.rarity : '';
+    return {
+      id: 'ddb-' + (it.id ?? def.id ?? uid(6)), name: def.name, cat: itemCategory(def),
+      qty: Math.max(1, it.quantity || 1), equipped: !!it.equipped, attuned: !!it.isAttuned,
+      notes: rarity, ddb: true,
+    };
+  });
 }
 
 function computeAc(d, mods, mod) {
@@ -318,6 +340,6 @@ export function blankCharacter(name = 'New Hero') {
     hp: 10, maxHp: 10, tempHp: 0, ac: 10, speed: 30, initBonus: 0, profBonus: 2, passivePerception: 10,
     abilities, saves: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
     slots: [], pact: null, spellDc: null, spellAttack: null, conditions: [], deathSaves: { success: 0, fail: 0 },
-    inspiration: false, gold: 0, color: '#2e6b8a', actions: [unarmedStrike(10, 2)],
+    inspiration: false, gold: 0, color: '#2e6b8a', actions: [unarmedStrike(10, 2)], inventory: [],
   };
 }

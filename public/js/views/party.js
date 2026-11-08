@@ -10,6 +10,7 @@ import { abilityMod, fmtMod, ABILITIES } from '../core/util.js';
 import { CONDITIONS } from '../constants.js';
 import { h, toast, openModal, confirmDialog, promptDialog, field, pickFile } from '../ui/dom.js';
 import { fetchDdb } from '../net.js';
+import { openInventory } from './inventory.js';
 
 let root;
 
@@ -36,6 +37,7 @@ function render() {
       h('h2', {}, 'The Party'),
       chars.length ? h('p', { class: 'muted' }, `${chars.length} adventurer${chars.length === 1 ? '' : 's'} · avg level ${avgLvl.toFixed(1)} · ${totalHp}/${totalMax} HP total`) : null),
     h('div', { class: 'row' },
+      h('button', { class: 'btn bag-btn', onclick: () => openInventory(), title: 'Party inventory' }, '🎒 Inventory'),
       h('button', { class: 'btn primary', onclick: openImport }, '⬇ Import from D&D Beyond'),
       h('button', { class: 'btn', onclick: () => openEditor(blankCharacter(store.me.name + "'s hero"), true) }, '＋ Add manually'),
       isDM() && chars.length ? h('button', { class: 'btn', onclick: () => partyRest('short') }, '☕ Short rest') : null,
@@ -124,6 +126,7 @@ function card(ch) {
       mine && ch.ddbId ? h('button', { class: 'btn tiny', onclick: () => resync(ch) }, '⟳ Sync DDB') : null,
       mine ? h('button', { class: 'btn tiny', onclick: () => shortRest(ch) }, '☕ Short rest') : null,
       mine ? h('button', { class: 'btn tiny', onclick: () => openEditor(ch, false) }, '✎ Edit') : null,
+      h('button', { class: 'btn tiny', onclick: () => openInventory(ch.id), title: `${ch.name}'s inventory` }, `🎒 ${(ch.inventory || []).length}`),
       onMap ? h('span', { class: 'tag' }, 'on map') : null,
       isDM() ? h('button', { class: 'btn tiny danger', onclick: async () => { if (await confirmDialog(`Remove ${ch.name} from the party?`, 'Remove', true)) dispatch({ type: 'party.removeChar', id: ch.id }); } }, '🗑') : null),
   );
@@ -287,6 +290,8 @@ function openEditor(ch, isNew) {
         };
         next.hp = Math.min(next.hp, next.maxHp);
         if (isNew && !isDM()) next.player = store.me.name;
+        // Inventory is edited live from the bag; don't overwrite it with this snapshot
+        if (!isNew) delete next.inventory;
         dispatch({ type: 'party.upsertChar', char: next });
       },
     }],

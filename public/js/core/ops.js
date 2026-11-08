@@ -38,7 +38,7 @@ export function initialState() {
       bg: null, fog: true, terrainAlpha: 1, milesPerHex: 6,
       hexes: {}, party: null, day: 1,
     },
-    party: { chars: {} },
+    party: { chars: {}, items: [] },
     npcs: {},
     log: [],
     encounters: [],
@@ -225,6 +225,16 @@ function currentEncounter(state) {
   return c.active ? state.encounters.find(e => e.id === c.encId) : null;
 }
 
+// Item categories. Characters default to the first four, the party stash
+// to the last three, but an item keeps its category wherever it's carried.
+export const ITEM_CATS = ['armor', 'weapon', 'consumable', 'gear', 'quest', 'treasure', 'misc'];
+
+function bagOf(s, owner) {
+  if (owner === 'party') return (s.party.items ||= []);
+  const ch = s.party.chars[owner];
+  return ch ? (ch.inventory ||= []) : null;
+}
+
 // ------------------------------------------------------------
 // Which sections each op touches (used by the server to persist)
 // ------------------------------------------------------------
@@ -243,7 +253,7 @@ const TOUCHES = {
   'hex.moveParty': ['hex', 'stats', 'adventure', 'log'], 'hex.advanceDay': ['hex', 'stats', 'adventure'],
   'party.upsertChar': ['party', 'adventure'], 'party.updateChar': ['party'], 'party.hp': ['party', 'log'],
   'party.slot': ['party'], 'party.rest': ['party', 'log'], 'party.removeChar': ['party', 'battle'],
-  'party.claim': ['party'],
+  'party.claim': ['party'], 'party.item': ['party'], 'party.itemRemove': ['party'], 'party.itemMove': ['party'],
   'npc.upsert': ['npcs', 'adventure'], 'npc.remove': ['npcs'],
   'log.add': ['log'], 'dice.roll': ['log', 'stats'],
   'adventure.add': ['adventure', 'stats'], 'adventure.update': ['adventure'], 'adventure.remove': ['adventure', 'stats'],
@@ -310,6 +320,12 @@ export function canApply(op, user, state) {
     case 'party.slot':
     case 'party.rest':
       return ownsChar(op.id) || 'Not your character';
+    // The shared party stash is open to everyone; a character's bag only to its player
+    case 'party.item':
+    case 'party.itemRemove':
+      return op.owner === 'party' || ownsChar(op.owner) || 'Not your character';
+    case 'party.itemMove':
+      return op.from === 'party' || ownsChar(op.from) || 'Not your character';
     case 'adventure.update':
     case 'adventure.remove': {
       const e = state.adventure.find(x => x.id === op.id);
@@ -660,7 +676,10 @@ const REDUCERS = {
       ch.deathSaves = prev.deathSaves;
       ch.player = prev.player ?? ch.player;
       ch.color = prev.color || ch.color;
+      // Imported gear is replaced; items added at the table stay
+      ch.inventory = [...(ch.inventory || []), ...(prev.inventory || []).filter(it => !it.ddb)];
     }
+    if (prev && !('inventory' in op.char)) ch.inventory = prev.inventory;
     s.party.chars[ch.id] = ch;
     if (!prev) {
       pushAdventure(s, op, { icon: 'user', title: `${ch.name} joins the party`, text: describeChar(ch) });
@@ -727,6 +746,33 @@ const REDUCERS = {
     }
     const who = op.id === 'all' ? 'The party' : s.party.chars[op.id]?.name || 'Someone';
     pushLog(s, op, { kind: 'heal', text: `${who} takes a ${op.kind} rest.` });
+  },
+
+  'party.item'(s, op) {
+    const list = bagOf(s, op.owner);
+    if (!list || !op.item?.id) return;
+    const item = { ...op.item, qty: Math.max(1, op.item.qty | 0) };
+    const i = list.findIndex(x => x.id === item.id);
+    if (i >= 0) list[i] = item; else list.push(item);
+  },
+
+  'party.itemRemove'(s, op) {
+    const list = bagOf(s, op.owner);
+    const i = list ? list.findIndex(x => x.id === op.itemId) : -1;
+    if (i >= 0) list.splice(i, 1);
+  },
+
+  // Give / stash: moves op.qty of a stack (all of it by default), merging
+  // into a matching unequipped stack at the destination
+  'party.itemMove'(s, op) {
+    const from = bagOf(s, op.from), to = bagOf(s, op.to);
+    const item = from?.find(x => x.id === op.itemId);
+    if (!item || !to || from === to) return;
+    const n = Math.max(1, Math.min(item.qty, op.qty || item.qty));
+    const moved = { ...item, qty: n, equipped: false, ddb: false };
+    if (n < item.qty) { item.qty -= n; moved.id = item.id + '-' + op.id; } else from.splice(from.indexOf(item), 1);
+    const same = to.find(x => !x.equipped && x.name === moved.name && x.cat === moved.cat);
+    if (same) same.qty += n; else to.push(moved);
   },
 
   'party.removeChar'(s, op) {
