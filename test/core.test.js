@@ -447,3 +447,186 @@ test('hiding and revealing a monster updates what players receive', () => {
   assert.equal(reveal.type, 'battle.setTokens', 'players get the revealed token back');
   assert.equal(reveal.tokens.gob.redacted, true, 'still without its stat block');
 });
+
+test('players see "Something attacks …" when a hidden creature acts', () => {
+  const s = withParty();
+  applyOp(s, op({ type: 'battle.updateToken', id: 'gob', patch: { hidden: true } }));
+  const o = op({ type: 'battle.action', actorId: 'gob', action: { name: 'Scimitar', kind: 'melee', dmgType: 'slashing' },
+    results: [{ targetId: 'pc', hit: true, ac: 15, attack: { rolls: [14], value: 14, bonus: 4, total: 18 }, damage: 25 }] });
+  applyOp(s, o);
+
+  const dmLine = s.log.find(l => l.kind === 'attack');
+  assert.match(dmLine.text, /^Goblin uses Scimitar: Aria/, 'the DM still sees who attacked');
+
+  const patch = playerMessages(o, {}, s).find(m => m.type === 'patch');
+  const texts = patch.log.map(l => l.text).join('\n');
+  assert.match(texts, /^Something attacks Aria \(18 vs AC 15: hit\) — 25 slashing — DOWNED/m);
+  assert.ok(!texts.includes('Goblin'), 'live update never names the hidden attacker');
+  assert.ok(!JSON.stringify(redactState(s).log).includes('Goblin'), 'nor does a fresh sync');
+  assert.ok(!JSON.stringify(patch.log).includes('playerText'));
+
+  // Once revealed, new attacks name it again
+  applyOp(s, op({ type: 'battle.updateToken', id: 'gob', patch: { hidden: false } }));
+  const o2 = op({ type: 'battle.action', actorId: 'gob', action: { name: 'Scimitar', kind: 'melee' }, results: [{ targetId: 'pc', hit: false }] });
+  applyOp(s, o2);
+  assert.match(playerMessages(o2, {}, s).find(m => m.type === 'patch').log[0].text, /^Goblin uses Scimitar/);
+});
+
+test('a hidden creature acting only on hidden creatures leaves no trace for players', () => {
+  const s = withParty();
+  applyOp(s, op({ type: 'battle.addToken', token: { id: 'sham', name: 'Goblin Shaman', col: 5, row: 5, hp: 9, maxHp: 9, conditions: [], hidden: true } }));
+  applyOp(s, op({ type: 'battle.updateToken', id: 'gob', patch: { hidden: true, hp: 2 } }));
+  const o = op({ type: 'battle.action', actorId: 'sham', action: { name: 'Cure Wounds', kind: 'heal' }, results: [{ targetId: 'gob', heal: 5 }] });
+  applyOp(s, o);
+  assert.ok(s.log.at(-1).text.startsWith('Goblin Shaman heals with Cure Wounds'));
+  assert.deepEqual(playerMessages(o, {}, s).find(m => m.type === 'patch').log, []);
+  assert.ok(!JSON.stringify(redactState(s).log).includes('Shaman'));
+});
+
+import { areaOf, aimedFromSelf, creaturesInArea } from '../public/js/core/aoe.js';
+import { computeVision, lightSources, canSee } from '../public/js/core/vision.js';
+import { addDice, upcastAction } from '../public/js/core/actions.js';
+
+test('cone, line and cube areas follow the 5e grid rules', () => {
+  const caster = { col: 2, row: 5, size: 1 };
+  const cone = areaOf({ radius: 15, shape: 'cone' }, caster, [8, 5]);
+  assert.ok(cone.test(3, 5) && cone.test(5, 4) && cone.test(5, 6), 'widens with distance');
+  assert.ok(!cone.test(3, 4), 'not wider than it is long');
+  assert.ok(!cone.test(6, 5), 'stops at 15 ft');
+  assert.ok(!cone.test(2, 5) && !cone.test(1, 5), "not the caster's own space or behind it");
+
+  const line = areaOf({ radius: 30, shape: 'line' }, caster, [9, 5]);
+  assert.deepEqual([3, 4, 5, 6, 7, 8, 9].map(c => line.test(c, 5)), [true, true, true, true, true, true, false]);
+  assert.ok(!line.test(4, 4), '5 ft wide');
+
+  const cube = areaOf({ radius: 15, shape: 'cube', range: 15 }, caster, [8, 5]);
+  const cells = [];
+  for (let r = 0; r < 11; r++) for (let c = 0; c < 12; c++) if (cube.test(c, r)) cells.push(`${c},${r}`);
+  assert.deepEqual(cells, ['3,4', '4,4', '5,4', '3,5', '4,5', '5,5', '3,6', '4,6', '5,6'], 'flush against the caster');
+
+  assert.equal(aimedFromSelf({ shape: 'cone' }), true);
+  assert.equal(aimedFromSelf({ shape: 'cube', range: 60, radius: 10 }), false);
+  const big = { id: 'ogre', col: 4, row: 6, size: 2 };
+  assert.deepEqual(creaturesInArea(cone, [big, { id: 'far', col: 10, row: 5 }]).map(t => t.id), ['ogre'], 'any cell of a large creature counts');
+  assert.ok(areaOf({ radius: 20 }, caster, [5, 5]).test(5, 9) && !areaOf({ radius: 20 }, caster, [5, 5]).test(5, 10), 'circles unchanged');
+});
+
+test('line of sight and lighting', () => {
+  const map = { width: 12, height: 7, cells: makeCells(12, 7), vision: { mode: 'los' } };
+  for (let r = 0; r < 7; r++) map.cells[r][6].elevation = 4;   // a wall down column 6…
+  map.cells[3][6] = { terrain: 'stone', elevation: 0, feature: 'door' };   // …with a closed door in a gap
+  const at = (vis, c, r) => vis[r * 12 + c];
+  let vis = computeVision(map, [{ x: 2.5, y: 3.5 }], []);
+  assert.equal(at(vis, 6, 2), 2, 'you can see the wall itself');
+  assert.equal(at(vis, 8, 3), 0, 'but not past a closed door');
+  map.cells[3][6].feature = 'doorOpen';
+  vis = computeVision(map, [{ x: 2.5, y: 3.5 }], []);
+  assert.equal(at(vis, 8, 3), 2, 'an open door lets sight through');
+  assert.equal(at(vis, 8, 0), 0, 'only through the gap');
+
+  map.vision = { mode: 'light', ambient: 'dark' };
+  map.cells[3][10].feature = 'torch';
+  const lights = lightSources(map, []);
+  vis = computeVision(map, [{ x: 2.5, y: 3.5 }], lights);
+  assert.equal(at(vis, 9, 3), 2, 'torchlight is bright within 20 ft');
+  assert.equal(at(vis, 3, 3), 1, 'dim light spills 40 ft through the open door');
+  assert.equal(at(vis, 1, 1), 0, 'darkness hides even nearby cells');
+  vis = computeVision(map, [{ x: 2.5, y: 3.5, darkvision: 60 }], lights);
+  assert.equal(at(vis, 1, 1), 1, 'darkvision sees darkness as dim');
+  assert.equal(at(vis, 3, 3), 2, '…and dim light as bright');
+  map.cells[3][3].feature = 'darkness';
+  vis = computeVision(map, [{ x: 2.5, y: 3.5, darkvision: 60 }], lights);
+  assert.equal(at(vis, 3, 3), 0, 'but not magical darkness');
+  assert.equal(at(vis, 9, 3), 0, 'which also blocks sight past it');
+  assert.equal(canSee(map, 2.5, 3.5, 2, 3), true);
+
+  map.vision = { mode: 'off' };
+  assert.ok(computeVision(map, [], []).every(v => v === 2), 'off: everything visible');
+  map.vision = { mode: 'los' };
+  assert.ok(computeVision(map, [], []).every(v => v === 0), 'no one on the map sees nothing');
+});
+
+test('upcasting adds dice and targets per slot level', () => {
+  assert.equal(addDice('8d6', '1d6', 2), '10d6');
+  assert.equal(addDice('3d8+3', '1d8', 1), '4d8+3');
+  assert.equal(addDice('1d4+1', '1d6', 1), '1d4+1+1d6');
+  const fb = parseActionLine('Fireball | save:dex | 15 | 8d6 fire | 150 | 20 | slot:3, up:1d6');
+  const at5 = upcastAction(fb, 5);
+  assert.equal(at5.damage, '10d6'); assert.equal(at5.slot, 5); assert.equal(at5.name, 'Fireball (5th)');
+  assert.equal(upcastAction(fb, 3), fb, 'base level is unchanged');
+  const mm = parseActionLine('Magic Missile | auto | 0 | 1d4+1 force | 120 | | slot:1, targets:3, up:target');
+  assert.equal(upcastAction(mm, 3).targets, 5);
+  const line = parseActionLine('Breath | save:dex | 13 | 6d6 fire | 30 | 15 cone | conc');
+  assert.equal(line.shape, 'cone'); assert.equal(line.conc, true);
+  assert.equal(actionToLine(line), 'Breath | save:dex | 13 | 6d6 fire | 30 | 15 cone | conc');
+
+  // The reducer spends the chosen slot
+  const s = withParty();
+  applyOp(s, op({ type: 'battle.action', actorId: 'pc', action: { name: 'Burning Hands (2nd)', kind: 'save', slot: 2 }, results: [] }));
+  assert.equal(s.party.chars.c1.slots[0].used, 0, 'no 2nd-level slot to spend on this sheet');
+  s.party.chars.c1.slots.push({ level: 2, max: 1, used: 0 });
+  applyOp(s, op({ type: 'battle.action', actorId: 'pc', action: { name: 'Burning Hands (2nd)', kind: 'save', slot: 2 }, results: [] }));
+  assert.equal(s.party.chars.c1.slots[1].used, 1);
+});
+
+test('concentration: casting, damage checks, saves and dropping', () => {
+  const s = withParty();
+  const cast = name => applyOp(s, op({ type: 'battle.action', actorId: 'pc', action: { name, kind: 'save', conc: name }, results: [] }, 'Pat'));
+  cast('Hold Person');
+  const aria = s.party.chars.c1;
+  aria.hp = aria.maxHp = 60;
+  assert.ok(aria.conditions.includes('concentrating'));
+  assert.equal(aria.concentration, 'Hold Person');
+
+  cast('Moonbeam');
+  assert.equal(aria.concentration, 'Moonbeam');
+  assert.ok(s.log.some(l => l.text === 'Aria stops concentrating on Hold Person.'), 'a new concentration spell ends the old one');
+
+  applyOp(s, op({ type: 'battle.action', actorId: 'gob', action: { name: 'Scimitar', kind: 'melee' }, results: [{ targetId: 'pc', hit: true, damage: 4 }] }));
+  applyOp(s, op({ type: 'party.hp', id: 'c1', mode: 'damage', amount: 24 }));
+  assert.ok(aria.hp > 0);
+  assert.deepEqual(aria.concChecks, [10, 12], 'DC is 10 or half the damage, one check per hit');
+  assert.ok(s.log.some(l => l.kind === 'conc' && l.text.includes('DC 12 Constitution save to keep concentrating on Moonbeam')));
+
+  const check = (d20, bonus = 2) => op({ type: 'battle.concentration', tokenId: 'pc', d20, bonus }, 'Pat');
+  assert.equal(canApply(check(10), PLAYER, s), true);
+  assert.notEqual(canApply(check(10), { name: 'Eve', role: 'player' }, s), true);
+  applyOp(s, check(9));
+  assert.deepEqual(aria.concChecks, [12], '11 beats DC 10');
+  applyOp(s, check(5));
+  assert.ok(!aria.conditions.includes('concentrating'), '7 fails DC 12');
+  assert.equal(aria.concentration, null);
+  assert.ok(s.stats.dice.Pat.d20s >= 2, 'concentration saves count toward dice stats');
+
+  cast('Bless');
+  applyOp(s, op({ type: 'battle.concentration', charId: 'c1', drop: true }, 'Pat'));
+  assert.ok(!aria.conditions.includes('concentrating'));
+
+  cast('Bless');
+  applyOp(s, op({ type: 'party.hp', id: 'c1', mode: 'damage', amount: 999 }));
+  assert.ok(!aria.conditions.includes('concentrating'), 'dropping to 0 HP ends concentration');
+  assert.ok(s.log.some(l => l.text === 'Aria loses concentration on Bless.'));
+});
+
+test('a hidden caster keeps its concentration out of the players\' log', () => {
+  const s = withParty();
+  applyOp(s, op({ type: 'battle.updateToken', id: 'gob', patch: { hidden: true } }));
+  applyOp(s, op({ type: 'battle.action', actorId: 'gob', action: { name: 'Hex', kind: 'auto', conc: 'Hex' }, results: [] }));
+  applyOp(s, op({ type: 'battle.action', actorId: 'gob', action: { name: 'Web', kind: 'auto', conc: 'Web' }, results: [] }));
+  applyOp(s, op({ type: 'battle.concentration', tokenId: 'gob', drop: true }));
+  assert.ok(s.log.some(l => l.text.includes('Goblin stops concentrating')));
+  assert.ok(!JSON.stringify(redactState(s).log).includes('Goblin'));
+});
+
+test('DM sets vision per map; it survives a resize and is saved with the map', () => {
+  const s = initialState();
+  const set = op({ type: 'battle.setVision', vision: { mode: 'light', ambient: 'dim' } });
+  assert.notEqual(canApply(set, PLAYER, s), true);
+  applyOp(s, set);
+  applyOp(s, op({ type: 'battle.setMap', map: { width: 30, height: 20, cells: [] } }));
+  assert.deepEqual(s.map.vision, { mode: 'light', ambient: 'dim' });
+  applyOp(s, op({ type: 'battle.saveMap', name: 'Crypt' }));
+  applyOp(s, op({ type: 'battle.setVision', vision: { mode: 'off' } }));
+  applyOp(s, op({ type: 'battle.loadMap', name: 'Crypt' }));
+  assert.equal(s.map.vision.mode, 'light');
+});

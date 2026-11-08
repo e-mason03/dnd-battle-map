@@ -113,6 +113,7 @@ export function parseDdbCharacter(raw) {
   const percProf = has('expertise', 'perception') ? prof * 2 : has('proficiency', 'perception') ? prof : 0;
   const passivePerception = 10 + mod('wis') + percProf + sumBonus('passive-perception');
   const initBonus = mod('dex') + sumBonus('initiative');
+  const darkvision = mods.filter(m => m.type === 'set-base' && m.subType === 'darkvision').reduce((best, m) => Math.max(best, m.value || 0), 0);
 
   // ---- Spellcasting ----
   const casterInfo = safe(() => spellcasting(d, classes, mods, mod, prof, sumBonus), { slots: [], pact: null, dc: null, attack: null, castMod: 0 });
@@ -127,7 +128,7 @@ export function parseDdbCharacter(raw) {
     level,
     xp: d.currentXp || 0,
     hp, maxHp, tempHp: d.temporaryHitPoints || 0,
-    ac, speed, initBonus, profBonus: prof, passivePerception,
+    ac, speed, initBonus, profBonus: prof, passivePerception, darkvision,
     abilities, saves,
     slots: casterInfo.slots,
     pact: casterInfo.pact,
@@ -274,9 +275,33 @@ function weaponAttacks(d, mods, abilities, prof) {
 
 const SPECIAL_SPELLS = {
   'eldritch blast': (lvl) => ({ targets: lvl >= 17 ? 4 : lvl >= 11 ? 3 : lvl >= 5 ? 2 : 1, noScale: true }),
-  'magic missile': () => ({ targets: 3, kind: 'auto', damage: '1d4+1' }),
-  'scorching ray': () => ({ targets: 3 }),
+  'magic missile': () => ({ targets: 3, kind: 'auto', damage: '1d4+1', upcast: { targets: 1 } }),
+  'scorching ray': () => ({ targets: 3, upcast: { targets: 1 } }),
 };
+
+// Extra dice per slot level for common spells, used when the sheet's
+// "at higher levels" data is missing
+const UPCAST_DICE = {
+  'burning hands': '1d6', 'chromatic orb': '1d8', 'cure wounds': '1d8', 'guiding bolt': '1d6', 'healing word': '1d4',
+  'inflict wounds': '1d10', 'thunderwave': '1d8', 'witch bolt': '1d12', 'ice knife': '1d10', 'hellish rebuke': '1d10',
+  'shatter': '1d8', 'moonbeam': '1d10', 'spiritual weapon': '1d8', 'fireball': '1d6', 'lightning bolt': '1d6',
+  'spirit guardians': '1d8', 'call lightning': '1d10', 'mass healing word': '1d4', 'ice storm': '1d8', 'blight': '1d8',
+  'cone of cold': '1d8', 'flame strike': '1d6', 'mass cure wounds': '1d8', 'disintegrate': '3d6',
+};
+
+const AOE_SHAPE = { cone: 'cone', line: 'line', cube: 'cube' };
+
+// Extra dice per slot level from the sheet: the damage/heal modifier's
+// "at higher levels" entry, else the spell's own, else the table above
+function upcastOf(def, m) {
+  if (!def.level) return null;
+  for (const src of [m?.atHigherLevels, def.atHigherLevels]) {
+    const hl = (src?.higherLevelDefinitions || []).find(x => x?.dice?.diceCount && x.dice.diceValue);
+    if (hl) return { dice: `${hl.dice.diceCount}d${hl.dice.diceValue}` };
+  }
+  const known = UPCAST_DICE[def.name.toLowerCase()];
+  return known ? { dice: known } : null;
+}
 
 function spellActions(d, classes, info, charLevel) {
   const entries = [];
@@ -314,7 +339,8 @@ function spellActions(d, classes, info, charLevel) {
     const range = def.range || {};
     const aoe = range.aoeValue || 0;
     const selfAoe = range.origin === 'Self' && aoe;
-    const radius = aoe ? (/cone|line|cube/i.test(range.aoeType || '') ? Math.round(aoe / 2) : aoe) : 0;
+    const shape = AOE_SHAPE[String(range.aoeType || '').toLowerCase()];
+    const radius = aoe;
     const kind = healMod && !dmgMod ? 'heal' : def.requiresAttackRoll ? 'spell' : def.requiresSavingThrow ? 'save' : 'auto';
 
     out.push({
@@ -328,6 +354,9 @@ function spellActions(d, classes, info, charLevel) {
       targets: special.targets || 1,
       slot: def.level || 0,
       pact: !!c.warlock && def.level > 0,
+      ...(shape && aoe && { shape }),
+      ...(def.concentration && { conc: true }),
+      ...((special.upcast || upcastOf(def, m)) && { upcast: special.upcast || upcastOf(def, m) }),
     });
   }
   return out.sort((a, b) => a.slot - b.slot);

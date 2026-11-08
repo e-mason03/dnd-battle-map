@@ -49,10 +49,27 @@ upload with grid fitting, saved map library, PNG and JSON export, v1 JSON import
 BG3-style play: select a token, hover to preview a 5e-costed path (difficult terrain,
 walls and enemies block), click to move (animated). The hotbar shows HP, AC, speed
 left, action/bonus pips, spell slots and actions (hotkeys 1–9). Pick an action → range
-box, attack bonus or save DC on hover, AoE circle for area spells → dice resolve and
-animate for everyone (slash, arrow, spell orb, explosion, heal sparkles, floating
+box, attack bonus or save DC on hover, area preview for area spells (circles, cones,
+lines and cubes — `core/aoe.js`; cones/lines/self-cubes are aimed by direction from the
+caster) → dice resolve and animate for everyone (slash, arrow, spell orb, explosion, heal sparkles, floating
 numbers, crits, shake). Initiative bar, rounds, dead combatants skipped, End Turn (E),
-advantage/disadvantage, Dash, conditions, hidden tokens, Alt-click ping.
+advantage/disadvantage, Dash, conditions, hidden tokens, Alt-click ping. Levelled
+spells can be cast from a higher slot (slot picker on the hotbar); `up:` flags add dice
+or targets per level.
+
+**Concentration** — casting a `conc` spell makes the caster concentrate on it (ending
+any earlier one). Damage queues a CON save at DC max(10, half the damage); the hotbar and
+party card show a "Roll CON save" button, and the room resolves it (`battle.concentration`).
+Dropping to 0 HP or a long rest ends concentration.
+
+**Vision & light** (`core/vision.js`, per map, DM sets it in Build) — *Line of sight*:
+walls, closed doors, Fog and Dark block the party's sight. *Dynamic lighting*: cells must
+also be lit — ambient (daylight / dim / darkness), Torch / Fire / Light features, tokens
+carrying light, darkvision (darkness → dim, dim → bright). The party shares vision
+(every PC plus tokens a player controls). Players don't see, hover, list or target
+creatures in unseen cells; area spells still hit them. The DM sees everything with the
+party's view shaded in, or "Preview as players". Vision is client-side: unseen tokens'
+positions still reach players' browsers (hidden tokens never do).
 
 **Cover** (`core/cover.js`, DMG grid variant) — lines run from the attacker's best corner
 to every corner of the target's space: 1–2 blocked → half cover (+2 AC / DEX saves),
@@ -72,8 +89,11 @@ a single damage/healing roll; targets' saves are rolled for them. The window can
 cancelled only before the first die is rolled. The DM's rolls stay instant.
 
 **Action line format** (tokens, NPCs, manual characters):
-`Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | dice type | range ft | radius ft | flags`
-with flags `bonus`, `slot:N`, `pact`, `targets:N`, `nohalf`.
+`Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | dice type | range ft | area | flags`
+where area is a radius (`20`) or size and shape (`15 cone`, `100 line`, `10 cube`), and
+flags are `bonus`, `slot:N`, `pact`, `targets:N`, `nohalf`, `conc`, `up:1d6` (extra dice
+per slot level above the spell's), `up:target` (extra target per level). D&D Beyond
+imports fill in shapes, concentration, upcasting and darkvision.
 
 **Hexcrawl** — flat/pointy hex grid, terrain + icon + label painting, per-hex public
 and DM notes, map-image upload with size/offset/scale alignment, fog of war, party

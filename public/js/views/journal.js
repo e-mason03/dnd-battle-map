@@ -113,7 +113,7 @@ function combatLog() {
   const encSel = h('select', { onchange: e => { filters.enc = e.target.value; render(); } },
     h('option', { value: '' }, 'All activity'), encs.map(e => h('option', { value: e.id, selected: filters.enc === e.id }, e.name)));
   const kindSel = h('select', { onchange: e => { filters.kind = e.target.value; render(); } },
-    [['', 'All kinds'], ['attack', 'Attacks'], ['heal', 'Healing'], ['death', 'Deaths'], ['roll', 'Dice rolls'], ['combat', 'Rounds'], ['note', 'Notes']]
+    [['', 'All kinds'], ['attack', 'Attacks'], ['heal', 'Healing'], ['death', 'Deaths'], ['roll', 'Dice rolls'], ['combat', 'Rounds'], ['conc', 'Concentration'], ['note', 'Notes']]
       .map(([v, l]) => h('option', { value: v, selected: filters.kind === v }, l)));
   const q = h('input', { type: 'search', placeholder: 'Search…', value: filters.q });
   q.addEventListener('input', () => { filters.q = q.value; clearTimeout(q.t); q.t = setTimeout(render, 250); });
@@ -222,7 +222,7 @@ function editNpc(n) {
       h('div', { class: 'span2' }, field('Notes (players can see)', f.notes)),
       h('div', { class: 'span2' }, field('DM secrets', f.dmNotes)),
       field('AC', f.ac), field('Max HP', f.maxHp), field('Speed', f.speed), field('Initiative bonus', f.initBonus),
-      h('div', { class: 'span2' }, field('Actions (for battle)', f.actions, 'Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | damage type | range ft | radius ft')),
+      h('div', { class: 'span2' }, field('Actions (for battle)', f.actions, 'Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | damage type | range ft | area (20, 15 cone, 60 line, 10 cube) | flags')),
       field('Token color', f.color), field('Portrait', portraitBtn),
       h('label', { class: 'check' }, f.hidden, 'Hidden from players'), h('label', { class: 'check' }, f.dead, 'Deceased')),
     actions: [{ label: 'Cancel' }, {

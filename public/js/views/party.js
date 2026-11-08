@@ -11,6 +11,7 @@ import { CONDITIONS } from '../constants.js';
 import { h, toast, openModal, confirmDialog, promptDialog, field, pickFile } from '../ui/dom.js';
 import { fetchDdb } from '../net.js';
 import { openInventory } from './inventory.js';
+import { rollConcentration } from './battle.js';
 
 let root;
 
@@ -113,8 +114,13 @@ function card(ch) {
 
     ch.hp <= 0 && !dead ? deathSaves(ch, mine) : null,
 
+    (ch.conditions || []).includes('concentrating') ? h('div', { class: 'hb-conc' + (ch.concChecks?.length ? ' check' : '') },
+      h('span', {}, '🔮 ', ch.concentration || 'Concentrating'),
+      mine && ch.concChecks?.length ? h('button', { class: 'btn tiny primary', onclick: () => rollConcentration(ch, ch.id) }, `Roll CON save · DC ${ch.concChecks[0]}`) : null,
+      mine ? h('button', { class: 'icon-btn', title: 'Stop concentrating', onclick: () => dispatch({ type: 'battle.concentration', charId: ch.id, drop: true }) }, '✕') : null) : null,
+
     h('div', { class: 'chips' },
-      (ch.conditions || []).map(c => h('span', { class: 'chip on' + (c === 'dead' ? ' bad' : '') }, c,
+      (ch.conditions || []).filter(c => c !== 'concentrating').map(c => h('span', { class: 'chip on' + (c === 'dead' ? ' bad' : '') }, c,
         mine ? h('button', { class: 'x', onclick: () => dispatch({ type: 'party.updateChar', id: ch.id, patch: { conditions: ch.conditions.filter(x => x !== c) } }) }, '×') : null)),
       mine ? h('select', { class: 'chip-add', onchange: e => {
         if (!e.target.value) return;
@@ -265,7 +271,7 @@ function openEditor(ch, isNew) {
       h('div', { class: 'span2' }, h('div', { class: 'section-title' }, 'Ability scores'), h('div', { class: 'saves-row' }, ABILITIES.map((k, i) => h('label', {}, h('small', {}, k.toUpperCase()), ab[i])))),
       h('div', { class: 'span2' }, h('div', { class: 'section-title' }, 'Saving throw bonuses'), h('div', { class: 'saves-row' }, ABILITIES.map((k, i) => h('label', {}, h('small', {}, k.toUpperCase()), sv[i])))),
       field('Portrait URL', f.avatar), field('Token color', f.color),
-      h('div', { class: 'span2' }, field('Attacks & spells', actions, 'Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | damage type | range ft | radius ft | flags (bonus, slot:N, pact, targets:N)'))),
+      h('div', { class: 'span2' }, field('Attacks & spells', actions, 'Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | damage type | range ft | area (20, 15 cone, 60 line, 10 cube) | flags (bonus, slot:N, pact, targets:N, conc, up:1d6, up:target)'))),
     actions: [{ label: 'Cancel' }, {
       label: 'Save', class: 'primary', onClick: () => {
         const classes = f.classes.value.split('/').map(s => s.trim()).filter(Boolean).map(s => {

@@ -8,7 +8,9 @@
 import { store, subscribe, onOp, dispatch, isDM, canEdit, myToken, avatarOf } from '../store.js';
 import { tokenView, healthFraction, healthLabel } from '../core/ops.js';
 import { monsterArt } from '../constants.js';
-import { resolveAction, describeAction, unarmedStrike } from '../core/actions.js';
+import { resolveAction, describeAction, unarmedStrike, upcastAction } from '../core/actions.js';
+import { areaOf, aimedFromSelf, creaturesInArea, areaCells } from '../core/aoe.js';
+import { computeVision, lightSources, seenLevel, visionOn } from '../core/vision.js';
 import { rollD20 } from '../core/dice.js';
 import { uid, escapeHtml } from '../core/util.js';
 import { h, $, toast } from '../ui/dom.js';
@@ -31,7 +33,7 @@ const ui = {
   adv: 0,
   hover: null,                  // { c, r, x, y (cell floats), tokenId }
   drag: null,
-  settings: { grid: true, coords: false },
+  settings: { grid: true, coords: false, previewVision: false },
   visible: false,
 };
 
@@ -71,11 +73,13 @@ export function mountBattle(root) {
     if (changed.has('*') || changed.has('map') || changed.has('battle') || changed.has('party')) {
       reachCache = null;
       coverCache.clear();
+      visionStale = true;
       if (changed.has('*') || changed.has('map')) mapRev++;
       if (ui.selectedId && !store.state.battle.tokens[ui.selectedId]) ui.selectedId = null;
       if (changed.has('*') && !centered) { centerMap(); centered = true; }
       renderHotbar();
       renderInitBar();
+      alertConcentration();
       dirty = true;
     }
     if (changed.has('*') || changed.has('meta') || changed.has('npcs') || changed.has('party') || changed.has('log') || changed.has('presence')) {
@@ -87,7 +91,7 @@ export function mountBattle(root) {
 
   onOp((op, { local }) => {
     if (op.type === 'battle.moveToken') fx.animateMove(op.id, op.path);
-    if (op.type === 'battle.action') fx.playAction(op, centerOf);
+    if (op.type === 'battle.action') fx.playAction(op, id => (seenById(id) ? centerOf(id) : null));
     if (op.type === 'battle.combatNext' || op.type === 'battle.combatStart') announceTurn();
     if (op.type === 'battle.setMap' || op.type === 'battle.loadMap') { centerMap(); }
     dirty = true;
@@ -151,9 +155,64 @@ export function centerMap() {
 const W = () => wrap.clientWidth;
 const H = () => wrap.clientHeight;
 
-function visibleTokens() {
+// Tokens this user may know about: hidden ones are the DM's alone, and with
+// vision on players only get creatures their party can see.
+// includeUnseen: still count creatures in the dark (an area spell hits them anyway)
+function visibleTokens(includeUnseen = false) {
   const s = store.state;
-  return Object.values(s.battle.tokens).filter(t => isDM() || !t.hidden).map(t => tokenView(s, t));
+  return Object.values(s.battle.tokens).filter(t => (isDM() || !t.hidden) && (includeUnseen || isSeen(t))).map(t => tokenView(s, t));
+}
+
+// ------------------------------------------------------------
+// Vision (line of sight / lighting). The party shares vision: every PC on
+// the map plus any token this player controls. The DM sees everything, with
+// the party's view shaded in — or exactly as players do with "preview".
+// ------------------------------------------------------------
+
+let visionCache = null;
+let visionStale = true;     // set whenever the map, tokens or party change
+const asPlayer = () => !isDM() || ui.settings.previewVision;
+
+function viewerTokens() {
+  const s = store.state;
+  return Object.values(s.battle.tokens)
+    .filter(t => !t.hidden && (t.charId || (!isDM() && myToken(t))))
+    .map(t => tokenView(s, t))
+    .filter(v => !v.conditions.includes('dead') && !v.conditions.includes('unconscious'));
+}
+
+function currentVision() {
+  if (!visionStale) return visionCache?.on ? visionCache : null;
+  visionStale = false;
+  const s = store.state;
+  if (!visionOn(s.map)) { if (visionCache) visionCache.on = false; return null; }
+  const viewers = viewerTokens();
+  const all = Object.values(s.battle.tokens).map(t => tokenView(s, t));
+  const key = [mapRev, s.map.vision.mode, s.map.vision.ambient, isDM(),
+    ...viewers.map(v => `v${v.id}:${v.col},${v.row},${v.darkvision || 0},${v.size || 1}`),
+    ...all.filter(t => t.light).map(t => `l${t.col},${t.row},${t.light},${t.conditions.includes('dead')}`)].join('|');
+  if (visionCache?.key !== key) {
+    const half = v => (v.size || 1) / 2;
+    visionCache = {
+      key, viewerIds: new Set(viewers.map(v => v.id)), none: !viewers.length,
+      vis: computeVision(s.map, viewers.map(v => ({ x: v.col + half(v), y: v.row + half(v), darkvision: v.darkvision })), lightSources(s.map, all)),
+    };
+  }
+  visionCache.on = true;
+  return visionCache;
+}
+
+// Can this user see token t right now?
+export function isSeen(t) {
+  if (!asPlayer()) return true;
+  const v = currentVision();
+  if (!v || v.viewerIds.has(t.id)) return true;
+  return seenLevel(v.vis, store.state.map, t) > 0;
+}
+
+function seenById(id) {
+  const t = store.state.battle.tokens[id];
+  return !!t && (isDM() || !t.hidden) && isSeen(t);
 }
 
 function tokenAt(c, r) {
@@ -239,12 +298,19 @@ function slotAvailable(v, a) {
   return (ch.slots || []).some(sl => sl.level >= a.slot && sl.used < sl.max);
 }
 
-// Upcasts to the lowest available slot at or above the spell's level
-function withSlot(v, a) {
-  if (!a.slot || !v.isPC || a.pact) return a;
+// Slot levels a PC could cast this spell with (unused slots at or above its
+// level); pact magic always casts at the pact slot level
+function castLevels(v, a) {
+  if (!a.slot || !v.isPC) return [];
   const ch = store.state.party.chars[v.charId];
-  const sl = (ch?.slots || []).filter(x => x.level >= a.slot && x.used < x.max).sort((x, y) => x.level - y.level)[0];
-  return sl ? { ...a, slot: sl.level } : a;
+  if (a.pact) return ch?.pact ? [ch.pact.level] : [];
+  return (ch?.slots || []).filter(x => x.level >= a.slot && x.used < x.max).map(x => x.level).sort((x, y) => x - y);
+}
+
+// The spell as cast at `level` (or the lowest slot available)
+function castAs(v, a, level) {
+  const lvl = level ?? castLevels(v, a)[0];
+  return lvl ? upcastAction(a, lvl) : a;
 }
 
 // ------------------------------------------------------------
@@ -262,8 +328,10 @@ function draw() {
     const sz = sel.size || 1;
     ov.range = { x: sel.col + sz / 2, y: sel.row + sz / 2, r: a.range / 5 + sz / 2 };
     if (a.radius && hv && inMap(hv.c, hv.r)) {
-      ov.aoe = { x: hv.c + 0.5, y: hv.r + 0.5, r: a.radius / 5, ok: feetBetween(sel, { col: hv.c, row: hv.r }) <= a.range };
-      if (a.kind === 'save') ov.cover = new Map(aoeTargets(hv.c, hv.r, a.radius, true).map(t => [t.id, t.cover]));
+      const area = areaOf(a, sel, [hv.c, hv.r]);
+      ov.aoe = { outline: area.outline, cells: a.shape ? areaCells(area, s.map) : null, ok: aoeInRange(sel, a, hv) };
+      if (aimedFromSelf(a)) delete ov.range;
+      if (a.kind === 'save') ov.cover = new Map(aoeTargets(area, sel, true).map(t => [t.id, t.cover]));
     } else if (!a.radius) {
       if (hv?.tokenId) ov.hoverTargetId = hv.tokenId;
       // Badge every creature that has cover (heals/auto-hits only care about total cover)
@@ -302,9 +370,19 @@ function draw() {
     ov.pathOk = inMap(hv.c, hv.r);
   }
 
+  const vision = currentVision();
   ambient = drawScene(ctx, W(), H(), {
     state: s, cam: ui.cam, isDM: isDM(), overlays: ov, settings: ui.settings, onImage: requestRender, mapRev,
+    vision: vision && { vis: vision.vis, alpha: asPlayer() ? [0.95, 0.5] : [0.5, 0.22] },
+    seen: vision && asPlayer() ? isSeen : null,
   }).animated;
+
+  if (vision?.none && asPlayer()) {
+    ctx.font = '600 15px "Fira Sans", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText('Place your character on the map to see', W() / 2, H() / 2);
+  }
 
   if (ui.tool.mode === 'paint' && hv && inMap(hv.c, hv.r)) {
     ctx.strokeStyle = '#f5a623';
@@ -527,10 +605,10 @@ function updateTip(x, y, t) {
     if (a.radius) {
       const hv = ui.hover;
       if (hv && inMap(hv.c, hv.r)) {
-        const hit = aoeTargets(hv.c, hv.r, a.radius, true);
+        const hit = aoeTargets(areaOf(a, sel, [hv.c, hv.r]), sel, true);
         const n = hit.length;
         const covered = hit.filter(x => x.cover !== 'none').length;
-        const ok = feetBetween(sel, { col: hv.c, row: hv.r }) <= a.range;
+        const ok = aoeInRange(sel, a, hv);
         html = ok ? `<b>${escapeHtml(a.name)}</b><br>${n} creature${n === 1 ? '' : 's'} in area` +
           (covered && a.save === 'dex' ? `<br><small>${covered} behind cover (DEX save bonus)</small>` : '')
           : '<span class="bad">Out of range</span>';
@@ -602,9 +680,10 @@ function startTargeting(action) {
     if (!isDM()) { toast('No spell slots left for ' + action.name, true); return; }
     toast('No slots left — casting anyway (DM)');
   }
-  ui.targeting = { action, targets: [] };
+  const levels = castLevels(sel, action);
+  ui.targeting = { base: action, levels, level: levels[0], action: castAs(sel, action, levels[0]), targets: [] };
   setHint(action.radius
-    ? `Click a point within ${action.range} ft · right-click to cancel`
+    ? (aimedFromSelf(action) ? `Aim the ${action.shape} and click · right-click to cancel` : `Click a point within ${action.range} ft · right-click to cancel`)
     : `Choose ${action.targets > 1 ? `up to ${action.targets} targets` : 'a target'} · right-click to cancel`);
   renderHotbar();
   dirty = true;
@@ -619,24 +698,25 @@ function cancelTargeting(rerender = true) {
   dirty = true;
 }
 
-// Creatures caught in an area, with the cover each has from its origin.
+// Cones, lines and self-cubes are aimed by direction; the rest need the
+// aimed point within range
+function aoeInRange(sel, a, cell) {
+  return aimedFromSelf(a) || feetBetween(sel, { col: cell.c, row: cell.r }) <= a.range;
+}
+
+// Creatures caught in an area, with the cover each has from its origin
+// (the caster for cones/lines/self-cubes, else the area's center).
 // Total cover shields a creature completely (the effect can't reach it).
-function aoeTargets(c, r, radiusFt, withCover = false) {
-  const R = radiusFt / 5;
-  const inArea = visibleTokens().filter(t => {
-    if (t.conditions.includes('dead')) return false;
-    const sz = t.size || 1;
-    for (let dr = 0; dr < sz; dr++) {
-      for (let dc = 0; dc < sz; dc++) {
-        if (Math.hypot(t.col + dc - c, t.row + dr - r) <= R + 0.01) return true;
-      }
-    }
-    return false;
-  });
+// includeUnseen: creatures in the dark are still hit when the spell goes off
+function aoeTargets(area, caster, withCover = false, includeUnseen = false) {
+  const inArea = creaturesInArea(area, visibleTokens(includeUnseen).filter(t => !t.conditions.includes('dead')));
   if (!withCover) return inArea;
+  const [ox, oy] = area.origin;
+  const from = area.origin[0] === caster.col + (caster.size || 1) / 2 && area.origin[1] === caster.row + (caster.size || 1) / 2
+    ? caster : { id: '__origin', col: Math.floor(ox), row: Math.floor(oy), size: 1 };
   return inArea
     .map(t => {
-      const auto = computeCover(store.state.map, { from: { id: '__origin', col: c, row: r, size: 1 }, point: [c + 0.5, r + 0.5], target: t });
+      const auto = computeCover(store.state.map, { from, point: [ox, oy], target: t });
       return { ...t, cover: withManualCover(auto, t.conditions) };
     })
     .filter(t => t.cover !== 'total');
@@ -662,8 +742,8 @@ function handleTargetClick(c, r) {
 
   if (a.radius) {
     if (!inMap(c, r)) return;
-    if (feetBetween(sel, { col: c, row: r }) > a.range) { toast('Out of range', true); return; }
-    fire(aoeTargets(c, r, a.radius, a.kind === 'save'), [c, r]);
+    if (!aoeInRange(sel, a, { c, r })) { toast('Out of range', true); return; }
+    fire(aoeTargets(areaOf(a, sel, [c, r]), sel, a.kind === 'save', true), [c, r]);
     return;
   }
   const t = inMap(c, r) ? tokenAt(c, r) : null;
@@ -688,7 +768,7 @@ function targetViews(ids) {
 
 function fire(targets, point) {
   const sel = selectedView();
-  const a = withSlot(sel, ui.targeting.action);
+  const a = ui.targeting.action;
   if (isDM()) {
     // The DM rolls instantly to keep monster turns moving
     dispatch(resolveAction(sel, a, targets, { adv: ui.adv, point }));
@@ -782,7 +862,8 @@ export function renderHotbar() {
     h('div', { class: 'hb-stats' },
       exact ? h('span', { title: 'Armor Class' }, '🛡 ', v.ac ?? '?') : null,
       h('span', { title: 'Speed' }, '👣 ', combat.active && mine ? `${movementLeft(v)}/${(v.speed || 30) * (ts.dash ? 2 : 1)} ft` : `${v.speed || 30} ft`),
-      v.conditions.length ? h('span', { class: 'conds' }, v.conditions.join(', ')) : null),
+      v.conditions.length ? h('span', { class: 'conds' }, v.conditions.filter(c => c !== 'concentrating').join(', ')) : null),
+    v.conditions.includes('concentrating') ? concentrationBar(v, mine) : null,
   );
   hotbar.append(portrait, info);
 
@@ -798,7 +879,7 @@ export function renderHotbar() {
   actionsFor(v).forEach((a, i) => {
     const noSlot = !slotAvailable(v, a);
     const spent = combat.active && (a.cost === 'bonus' ? ts.bonus : ts.action);
-    const active = ui.targeting?.action.id === a.id && ui.targeting?.action.name === a.name;
+    const active = ui.targeting?.base.id === a.id && ui.targeting?.base.name === a.name;
     acts.append(h('button', {
       class: 'hb-action' + (active ? ' active' : '') + (noSlot || spent ? ' dim' : '') + (a.cost === 'bonus' ? ' bonus' : ''),
       title: `${a.name}\n${describeAction(a)}${i < 9 ? `\nHotkey: ${i + 1}` : ''}`,
@@ -821,6 +902,20 @@ export function renderHotbar() {
     hotbar.append(slots);
   }
 
+  // Upcasting: pick which slot to spend while aiming a levelled spell
+  const tg = ui.targeting;
+  if (tg && tg.levels.length > 1 && !tg.base.pact) {
+    hotbar.append(h('div', { class: 'hb-upcast', title: tg.base.upcast ? `+${tg.base.upcast.dice || '1 target'} per level above ${tg.base.slot}` : 'Cast with a higher slot' },
+      h('small', {}, 'Slot'),
+      tg.levels.map(l => h('button', { class: 'btn tiny' + (l === tg.level ? ' active' : ''), onclick: () => {
+        tg.level = l;
+        tg.action = castAs(v, tg.base, l);
+        tg.targets = tg.targets.slice(0, tg.action.targets || 1);
+        renderHotbar();
+        dirty = true;
+      } }, l))));
+  }
+
   const advLabel = ui.adv > 0 ? 'Advantage' : ui.adv < 0 ? 'Disadvantage' : 'Normal roll';
   const extras = h('div', { class: 'hb-extras' },
     h('button', { class: 'btn small' + (ui.adv ? ' active' : ''), title: 'Cycle normal / advantage / disadvantage', onclick: () => { ui.adv = ui.adv === 0 ? 1 : ui.adv === 1 ? -1 : 0; renderHotbar(); } }, advLabel),
@@ -837,6 +932,42 @@ export function renderHotbar() {
   extras.append(h('button', { class: 'btn small', title: 'Roll initiative / check', onclick: () => quickInitiative(v) }, '🎲 Init'));
   extras.append(h('button', { class: 'btn small', onclick: () => openTokenEditor(v.id) }, 'Edit'));
   hotbar.append(extras);
+}
+
+// ------------------------------------------------------------
+// Concentration
+// ------------------------------------------------------------
+
+function concentrationBar(v, mine) {
+  const dc = v.concChecks?.[0];
+  return h('div', { class: 'hb-conc' + (dc ? ' check' : '') },
+    h('span', { title: 'Concentrating' }, '🔮 ', v.concentration || 'Concentrating'),
+    mine && dc ? h('button', { class: 'btn tiny primary', onclick: () => rollConcentration(v), title: 'Constitution saving throw to keep concentrating' }, `Roll CON save · DC ${dc}`) : null,
+    mine ? h('button', { class: 'icon-btn', title: 'Stop concentrating', onclick: () => dispatch({ type: 'battle.concentration', tokenId: v.id, drop: true }) }, '✕') : null);
+}
+
+export function rollConcentration(v, charId = null) {
+  const dc = v.concChecks?.[0];
+  if (!dc) return;
+  const d = rollD20();
+  const bonus = v.saves?.con ?? 0;
+  const total = d.value + bonus;
+  dispatch({ type: 'battle.concentration', ...(charId ? { charId } : { tokenId: v.id }), d20: d.value, bonus });
+  toast(`🔮 CON save ${d.value}${bonus >= 0 ? '+' : ''}${bonus} = ${total} vs DC ${dc} — ${total >= dc ? 'concentration holds' : 'concentration lost!'}`, total < dc);
+}
+
+// Banner when a creature you control owes a concentration save
+const concSeen = new Map();
+function alertConcentration() {
+  for (const t of Object.values(store.state.battle.tokens)) {
+    const v = tokenView(store.state, t);
+    const n = v.concChecks?.length || 0;
+    const before = concSeen.get(t.id) ?? n;
+    concSeen.set(t.id, n);
+    if (n > before && canControl(v)) {
+      showBanner(`🔮 ${v.name} must make a DC ${v.concChecks[n - 1]} CON save to keep concentrating`, true);
+    }
+  }
 }
 
 function quickInitiative(v) {

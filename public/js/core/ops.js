@@ -69,7 +69,8 @@ export function tokenView(state, tok) {
     name: ch.name, hp: ch.hp, maxHp: ch.maxHp, tempHp: ch.tempHp || 0, ac: ch.ac,
     speed: ch.speed, initBonus: ch.initBonus, saves: ch.saves || {}, actions: ch.actions || [],
     avatar: ch.avatar, color: ch.color || tok.color, conditions: ch.conditions || [],
-    owner: ch.player, isPC: true,
+    owner: ch.player, isPC: true, darkvision: tok.darkvision ?? ch.darkvision ?? 0,
+    concentration: ch.concentration, concChecks: ch.concChecks,
   };
 }
 
@@ -148,7 +149,33 @@ function damageCreature(state, tok, amount, crit) {
     addCondition(rec, 'dead');
     res.killed = true;
   }
+  // Concentration: dropping to 0 HP ends it; otherwise a CON save is owed
+  if (res.dealt > 0 && (rec.conditions || []).includes('concentrating')) {
+    if (rec.hp === 0) res.concLost = endConcentration(rec);
+    else {
+      res.concDc = Math.max(10, Math.floor(res.dealt / 2));
+      (rec.concChecks ||= []).push(res.concDc);
+      res.concSpell = rec.concentration || null;
+    }
+  }
   return res;
+}
+
+// Ends concentration; returns what it was on
+function endConcentration(rec) {
+  const was = rec.concentration || 'their spell';
+  removeCondition(rec, 'concentrating');
+  rec.concentration = null;
+  rec.concChecks = [];
+  return was;
+}
+
+function concentrationLog(s, op, name, res, hidden) {
+  const extra = hidden ? { secret: true } : {};
+  if (res.concLost) pushLog(s, op, { kind: 'conc', text: `${name} loses concentration on ${res.concLost}.`, ...extra });
+  if (res.concDc) {
+    pushLog(s, op, { kind: 'conc', text: `${name} must make a DC ${res.concDc} Constitution save to keep concentrating${res.concSpell ? ` on ${res.concSpell}` : ''}.`, ...extra });
+  }
 }
 
 function healCreature(state, tok, amount) {
@@ -253,6 +280,7 @@ const TOUCHES = {
   'hex.moveParty': ['hex', 'stats', 'adventure', 'log'], 'hex.advanceDay': ['hex', 'stats', 'adventure'],
   'party.upsertChar': ['party', 'adventure'], 'party.updateChar': ['party'], 'party.hp': ['party', 'log'],
   'party.slot': ['party'], 'party.rest': ['party', 'log'], 'party.removeChar': ['party', 'battle'],
+  'battle.concentration': ['battle', 'party', 'log', 'stats'], 'battle.setVision': ['map'],
   'party.claim': ['party'], 'party.item': ['party'], 'party.itemRemove': ['party'], 'party.itemMove': ['party'],
   'npc.upsert': ['npcs', 'adventure'], 'npc.remove': ['npcs'],
   'log.add': ['log'], 'dice.roll': ['log', 'stats'],
@@ -268,7 +296,7 @@ export const touchedSections = op => TOUCHES[op.type] || [];
 // ------------------------------------------------------------
 
 const DM_ONLY = new Set([
-  'battle.setTokens', 'battle.combatStart', 'battle.combatEnd', 'battle.combatPrev', 'battle.saveMap', 'battle.loadMap',
+  'battle.setTokens', 'battle.setVision', 'battle.combatStart', 'battle.combatEnd', 'battle.combatPrev', 'battle.saveMap', 'battle.loadMap',
   'battle.deleteMap', 'hex.config', 'hex.advanceDay', 'hex.moveParty', 'hex.setMany', 'npc.upsert', 'npc.remove',
   'room.settings', 'encounter.update', 'encounter.remove', 'party.removeChar',
 ]);
@@ -301,6 +329,8 @@ export function canApply(op, user, state) {
       return ownsToken(state, user, tokens[op.id]) || editAll || 'Not your token';
     case 'battle.action':
       return ownsToken(state, user, tokens[op.actorId]) || 'Not your token';
+    case 'battle.concentration':
+      return (op.charId ? ownsChar(op.charId) : ownsToken(state, user, tokens[op.tokenId])) || 'Not your creature';
     case 'battle.combatNext': {
       const c = state.battle.combat;
       return ownsToken(state, user, tokens[c.order[c.turn]?.id]) || 'It is not your turn';
@@ -366,6 +396,7 @@ const REDUCERS = {
       width: m.width, height: m.height,
       cells: makeCells(m.width, m.height, m.cells),
       bg: m.bg === undefined ? s.map.bg : m.bg,
+      vision: m.vision === undefined ? s.map.vision : m.vision,
     };
     if (op.tokens) s.battle.tokens = op.tokens;
     for (const t of Object.values(s.battle.tokens)) {
@@ -434,6 +465,9 @@ const REDUCERS = {
     const actor = b.tokens[op.actorId];
     const av = actor ? tokenView(s, actor) : null;
     const actorName = av?.name || op.actorName || 'Someone';
+    // Players don't learn who a hidden creature is from the log: their copy
+    // says "Something attacks …" and leaves out hidden targets entirely
+    const actorHidden = !!actor?.hidden;
     const a = op.action || {};
     const aKey = actor ? statKeyFor(actor) : 'npc:' + actorName.toLowerCase();
     const aStats = actorStats(s, aKey, actorName, !!actor?.charId);
@@ -445,21 +479,34 @@ const REDUCERS = {
       if (slot && slot.used < slot.max) slot.used++;
     }
     if (a.slot > 0 || a.kind === 'spell' || a.kind === 'save' || a.isSpell) aStats.spells++;
+    if (a.conc && actor) {
+      // Starting a concentration spell ends the previous one
+      const rec = creatureRecord(s, actor);
+      if ((rec.conditions || []).includes('concentrating') && rec.concentration && rec.concentration !== a.conc) {
+        pushLog(s, op, { kind: 'conc', text: `${actorName} stops concentrating on ${rec.concentration}.`, ...(actorHidden && { secret: true }) });
+      }
+      addCondition(rec, 'concentrating');
+      rec.concentration = a.conc;
+      rec.concChecks = [];
+    }
     if (actor && b.combat.active) {
       const ts = b.combat.turnState[actor.id] ||= {};
       ts[a.cost === 'bonus' ? 'bonus' : 'action'] = true;
     }
 
     const parts = [];
+    const playerParts = [];
     for (const r of op.results || []) {
       const tgt = b.tokens[r.targetId];
       const tv = tgt ? tokenView(s, tgt) : null;
       const tName = tv?.name || r.targetName || 'target';
+      const tgtHidden = !!tgt?.hidden;
 
       if (a.kind === 'heal') {
         const healed = tgt ? healCreature(s, tgt, r.heal) : r.heal;
         aStats.healing += healed;
         parts.push(`${tName} +${healed} HP`);
+        if (!tgtHidden) playerParts.push(parts.at(-1));
         continue;
       }
 
@@ -493,31 +540,48 @@ const REDUCERS = {
           actorStats(s, tKey, tName, true).downs++;
           s.stats.party.downs++;
           desc += ' — DOWNED';
-          pushLog(s, op, { kind: 'death', text: `${tName} falls unconscious!` });
+          pushLog(s, op, { kind: 'death', text: `${tName} falls unconscious!`, ...(tgtHidden && { secret: true }) });
         }
         if (res.killed) {
           aStats.kills++;
           if (!tgt.charId) s.stats.party.kills++;
           desc += ' — SLAIN';
           if (enc) enc.kills.push({ by: actorName, target: tName });
-          pushLog(s, op, { kind: 'death', text: `${tName} was slain by ${actorName}.` });
+          pushLog(s, op, {
+            kind: 'death', text: `${tName} was slain by ${actorName}.`,
+            ...(tgtHidden ? { secret: true } : actorHidden && { playerText: `${tName} was slain by something.` }),
+          });
           if (tgt.charId) {
-            pushAdventure(s, op, { icon: 'skull', title: `${tName} has died`, text: `Slain by ${actorName}${enc ? ' during ' + enc.name : ''}.` });
+            const during = enc ? ' during ' + enc.name : '';
+            pushAdventure(s, op, {
+              icon: 'skull', title: `${tName} has died`, text: `Slain by ${actorName}${during}.`,
+              ...(actorHidden && { playerText: `Slain by something${during}.` }),
+            });
           }
         }
         if (res.deathFail) desc += ` (+${res.deathFail} death save failure)`;
+        concentrationLog(s, op, tName, res, tgtHidden);
       } else if (r.damage > 0) {
         desc += ` — ${r.damage} ${a.dmgType || ''}`.trimEnd();
       }
       parts.push(desc);
+      if (!tgtHidden) playerParts.push(desc);
     }
 
     const verb = a.kind === 'heal' ? 'heals with' : a.kind === 'save' ? 'casts' : 'uses';
-    pushLog(s, op, {
+    const entry = {
       kind: a.kind === 'heal' ? 'heal' : 'attack',
       actor: actorName,
       text: `${actorName} ${verb} ${a.name}${parts.length ? ': ' + parts.join('; ') : ''}`,
-    });
+    };
+    if (actorHidden) {
+      // Nothing visible happened (e.g. a hidden creature buffing another) → players see nothing
+      if (!playerParts.length) entry.secret = true;
+      else entry.playerText = `Something ${a.kind === 'heal' ? 'heals' : 'attacks'} ${playerParts.join('; ')}`;
+    } else if (playerParts.length < parts.length) {
+      entry.playerText = `${actorName} ${verb} ${a.name}${playerParts.length ? ': ' + playerParts.join('; ') : ''}`;
+    }
+    pushLog(s, op, entry);
   },
 
   'battle.setInit'(s, op) {
@@ -600,9 +664,39 @@ const REDUCERS = {
 
   'battle.saveMap'(s, op) {
     s.maps[op.name] = {
-      width: s.map.width, height: s.map.height, cells: s.map.cells, bg: s.map.bg,
+      width: s.map.width, height: s.map.height, cells: s.map.cells, bg: s.map.bg, vision: s.map.vision,
       tokens: op.withTokens ? s.battle.tokens : null, saved: op.ts,
     };
+  },
+
+  'battle.setVision'(s, op) {
+    s.map.vision = { mode: op.vision?.mode || 'off', ambient: op.vision?.ambient || 'bright' };
+  },
+
+  // Resolve a pending concentration check (op.d20 + op.bonus vs the oldest DC),
+  // or drop concentration (op.drop). The roller sends its CON save bonus,
+  // since players' copies of monsters don't carry save bonuses.
+  'battle.concentration'(s, op) {
+    const tok = op.tokenId ? s.battle.tokens[op.tokenId] : null;
+    const rec = op.charId ? s.party.chars[op.charId] : tok && creatureRecord(s, tok);
+    if (!rec) return;
+    const name = op.charId ? rec.name : tokenView(s, tok).name;
+    const extra = tok?.hidden ? { secret: true } : {};
+    if (op.drop) {
+      if (!(rec.conditions || []).includes('concentrating')) return;
+      pushLog(s, op, { kind: 'conc', text: `${name} stops concentrating on ${endConcentration(rec)}.`, ...extra });
+      return;
+    }
+    const dc = rec.concChecks?.[0];
+    if (!dc || op.d20 == null) return;
+    const total = (op.d20 | 0) + (op.bonus | 0);
+    recordD20(s, op.by, [op.d20 | 0]);
+    if (total >= dc) {
+      rec.concChecks.shift();
+      pushLog(s, op, { kind: 'conc', text: `${name} keeps concentrating${rec.concentration ? ` on ${rec.concentration}` : ''} (CON save ${total} vs DC ${dc}).`, ...extra });
+    } else {
+      pushLog(s, op, { kind: 'conc', text: `${name} fails a DC ${dc} Constitution save (${total}) and loses concentration on ${endConcentration(rec)}.`, ...extra });
+    }
   },
 
   'battle.loadMap'(s, op) {
@@ -708,6 +802,7 @@ const REDUCERS = {
       actorStats(s, 'pc:' + op.id, ch.name, true).dmgTaken += r.dealt;
       text = `${ch.name} takes ${op.amount} damage` + (r.downed ? ' and falls unconscious!' : '.');
       if (r.downed) { actorStats(s, 'pc:' + op.id, ch.name, true).downs++; s.stats.party.downs++; }
+      if (r.concLost || r.concDc) { pushLog(s, op, { kind: 'attack', text }); text = null; concentrationLog(s, op, ch.name, r, false); }
     } else if (op.mode === 'heal') {
       const healed = healCreature(s, fake, op.amount);
       text = `${ch.name} regains ${healed} HP.`;
@@ -740,6 +835,7 @@ const REDUCERS = {
         for (const sl of ch.slots || []) sl.used = 0;
         ch.deathSaves = { success: 0, fail: 0 };
         removeCondition(ch, 'unconscious');
+        if (ch.conditions?.includes('concentrating')) endConcentration(ch);
       } else if (op.heal?.[id]) {
         healCreature(s, { charId: id }, op.heal[id]);
       }
@@ -904,8 +1000,23 @@ export function redactSection(key, value, state) {
     }
     case 'maps': return {};
     case 'encounters': return value.map(e => ({ ...e, notes: '' }));
+    case 'log':
+    case 'adventure': return redactEntries(value);
     default: return value;
   }
+}
+
+// Log / journal entries about hidden creatures carry a players' version:
+// `playerText` replaces the text, `secret` drops the entry for players
+export function redactEntries(entries) {
+  const out = [];
+  for (const e of entries) {
+    if (e.secret) continue;
+    if (e.playerText === undefined) { out.push(e); continue; }
+    const { playerText, ...rest } = e;
+    out.push({ ...rest, text: playerText, ...('actor' in rest && { actor: 'Something' }) });
+  }
+  return out;
 }
 
 export function redactState(state) {
@@ -1002,7 +1113,7 @@ function actionMessages(op, state) {
     {
       type: 'patch', tokens, chars, combat: state.battle.combat, stats: state.stats,
       encounters: redactSection('encounters', state.encounters, state),
-      log: state.log.filter(fromOp), adventure: state.adventure.filter(fromOp),
+      log: redactEntries(state.log.filter(fromOp)), adventure: redactEntries(state.adventure.filter(fromOp)),
     },
   ];
 }

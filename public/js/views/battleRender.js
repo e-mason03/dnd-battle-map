@@ -98,12 +98,15 @@ export function drawScene(ctx, W, H, view) {
     }
   }
 
+  if (view.vision) drawVision(ctx, map, cam, view.vision);
+
   const ov = view.overlays || {};
   drawOverlays(ctx, view, ov);
 
-  // Tokens — dead under the living, selected on top
+  // Tokens — dead under the living, selected on top; with vision on, players
+  // only see creatures in cells their party can see
   const toks = Object.values(state.battle.tokens)
-    .filter(t => view.isDM || !t.hidden)
+    .filter(t => (view.isDM || !t.hidden) && (!view.seen || view.seen(t)))
     .map(t => tokenView(state, t))
     .sort((a, b) => (b.conditions.includes('dead') - a.conditions.includes('dead')) || ((a.id === ov.selectedId) - (b.id === ov.selectedId)));
   for (const t of toks) drawToken(ctx, t, view, ov);
@@ -111,6 +114,38 @@ export function drawScene(ctx, W, H, view) {
   if (ov.pathEnd) drawPathLabel(ctx, view, ov);
   fx.draw(ctx, cam, W, H);
   return { animated };
+}
+
+// ------------------------------------------------------------
+// Vision: darkness over unseen cells, shade over dim ones. Painted as one
+// pixel per cell and scaled up with smoothing, which softens the edges.
+// ------------------------------------------------------------
+
+let visCanvas = null, visFor = null;
+
+// vision: { vis (Uint8Array from computeVision), alpha: [unseen, dim] }
+function drawVision(ctx, map, cam, vision) {
+  const key = vision.vis;
+  if (visFor !== key || visCanvas?.alpha !== vision.alpha.join()) {
+    visCanvas ||= document.createElement('canvas');
+    visCanvas.width = map.width;
+    visCanvas.height = map.height;
+    const g = visCanvas.getContext('2d');
+    const img = g.createImageData(map.width, map.height);
+    const [a0, a1] = vision.alpha.map(a => Math.round(a * 255));
+    for (let i = 0; i < vision.vis.length; i++) {
+      img.data[i * 4] = 4; img.data[i * 4 + 1] = 5; img.data[i * 4 + 2] = 14;
+      img.data[i * 4 + 3] = vision.vis[i] === 0 ? a0 : vision.vis[i] === 1 ? a1 : 0;
+    }
+    g.putImageData(img, 0, 0);
+    visCanvas.alpha = vision.alpha.join();
+    visFor = key;
+  }
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(visCanvas, cam.x, cam.y, map.width * cam.s, map.height * cam.s);
+  ctx.restore();
 }
 
 // ------------------------------------------------------------
@@ -176,18 +211,42 @@ function drawOverlays(ctx, view, ov) {
   }
 
   if (ov.aoe) {
-    const { x, y, r, ok } = ov.aoe;
+    const { outline: o, cells, ok } = ov.aoe;
     const col = ok ? '255,120,40' : '200,60,60';
-    const g = ctx.createRadialGradient(x * s + cam.x, y * s + cam.y, 0, x * s + cam.x, y * s + cam.y, r * s);
-    g.addColorStop(0, `rgba(${col},0.08)`);
-    g.addColorStop(1, `rgba(${col},0.32)`);
-    ctx.fillStyle = g;
+    const X = x => x * s + cam.x, Y = y => y * s + cam.y;
     ctx.strokeStyle = `rgba(${col},0.95)`;
     ctx.lineWidth = 2;
+    if (o.kind === 'circle') {
+      const g = ctx.createRadialGradient(X(o.x), Y(o.y), 0, X(o.x), Y(o.y), o.r * s);
+      g.addColorStop(0, `rgba(${col},0.08)`);
+      g.addColorStop(1, `rgba(${col},0.32)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(X(o.x), Y(o.y), o.r * s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      return;
+    }
+    // Shaped areas: shade the cells that are actually affected, then outline the template
+    ctx.fillStyle = `rgba(${col},0.24)`;
+    for (const [c, r] of cells || []) ctx.fillRect(X(c) + 1, Y(r) + 1, s - 2, s - 2);
+    ctx.setLineDash([6, 4]);
     ctx.beginPath();
-    ctx.arc(x * s + cam.x, y * s + cam.y, r * s, 0, Math.PI * 2);
-    ctx.fill();
+    if (o.kind === 'rect') {
+      ctx.rect(X(o.x), Y(o.y), o.w * s, o.h * s);
+    } else {
+      const [dx, dy] = o.dir, px = -dy, py = dx;
+      const ax = o.o[0] + dx * o.start, ay = o.o[1] + dy * o.start;
+      const bx = ax + dx * o.len, by = ay + dy * o.len;
+      const w0 = o.kind === 'cone' ? 0 : o.width / 2, w1 = o.kind === 'cone' ? o.len / 2 : o.width / 2;
+      ctx.moveTo(X(ax + px * w0), Y(ay + py * w0));
+      ctx.lineTo(X(bx + px * w1), Y(by + py * w1));
+      ctx.lineTo(X(bx - px * w1), Y(by - py * w1));
+      ctx.lineTo(X(ax - px * w0), Y(ay - py * w0));
+      ctx.closePath();
+    }
     ctx.stroke();
+    ctx.setLineDash([]);
   }
 }
 
