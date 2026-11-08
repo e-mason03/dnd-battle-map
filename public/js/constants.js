@@ -87,6 +87,29 @@ export const MONSTER_TOKENS = [
 ];
 
 export const ALL_TOKENS = [...PLAYER_TOKENS, ...MONSTER_TOKENS];
+
+// Monster portraits shown when hovering a token (public/img/monsters/<slug>.jpg).
+// To add one, drop a resized image in that folder and list its slug here.
+export const MONSTER_ART = {
+  'bandit': 'Bandit', 'death-dog': 'Death Dog', 'goblin': 'Goblin', 'green-hag': 'Green Hag', 'lich': 'Lich',
+  'night-hag': 'Night Hag', 'skeleton': 'Skeleton', 'skeleton-archer': 'Skeleton Archer', 'vampire': 'Vampire',
+  'vampire-spawn': 'Vampire Spawn', 'wolf': 'Wolf', 'zombie': 'Zombie',
+};
+// Art painted as a full scene rather than on a white background; the card
+// shows these edge to edge instead of blending them into the parchment
+export const SCENE_ART = new Set(['skeleton-archer']);
+
+const artSlug = name => String(name || '').toLowerCase().replace(/\s+\d+$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+// Portrait for a token: { url, scene } or null. token.art: undefined = match
+// by name ("Goblin 3" → goblin), 'none' = never, otherwise a MONSTER_ART slug.
+export function monsterArt(t) {
+  if (!t || t.charId || t.art === 'none') return null;
+  const slug = t.art && MONSTER_ART[t.art] ? t.art : artSlug(t.name);
+  return MONSTER_ART[slug] ? { url: `img/monsters/${slug}.jpg`, scene: SCENE_ART.has(slug) } : null;
+}
+
+export const monsterArtUrl = t => monsterArt(t)?.url || null;
 export const tokenDef = type => ALL_TOKENS.find(t => t.type === type) || MONSTER_TOKENS[0];
 
 export const CONDITIONS = [
