@@ -755,7 +755,8 @@ const REDUCERS = {
       s.stats.party.hexes += op.dist;
       const dest = s.hex.hexes[hexKey(c, r)] || {};
       const where = dest.label || op.terrainLabel || 'the wilds';
-      const text = `The party travels ${op.dist} hex${op.dist === 1 ? '' : 'es'} (${op.dist * (s.hex.milesPerHex || 6)} mi) to ${where}.`;
+      const byRoad = op.road ? `, ${op.road === op.dist ? 'all' : op.road} of them along the road` : '';
+      const text = `The party travels ${op.dist} hex${op.dist === 1 ? '' : 'es'} (${op.dist * (s.hex.milesPerHex || 6)} mi) to ${where}${byRoad}.`;
       pushAdventure(s, op, { icon: 'boot', title: `Day ${s.hex.day}: Travel`, text });
     }
   },

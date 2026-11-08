@@ -31,6 +31,24 @@ export function hexNeighbors(c, r, orientation) {
   return CUBE_DIRS.map(([dq, dr]) => cubeToOffset(q + dq, cr + dr, orientation));
 }
 
+// Hexes on the straight line from a to b, both ends included
+export function hexLine(a, b, orientation) {
+  const A = offsetToCube(a[0], a[1], orientation), B = offsetToCube(b[0], b[1], orientation);
+  const n = hexDistance(a, b, orientation);
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    // Nudge off exact ties so the line doesn't wobble between two hexes
+    const t = n ? i / n : 0;
+    let q = A.q + (B.q - A.q) * t + 1e-6, r = A.r + (B.r - A.r) * t + 1e-6, s = A.s + (B.s - A.s) * t - 2e-6;
+    let rq = Math.round(q), rr = Math.round(r), rs = Math.round(s);
+    const dq = Math.abs(rq - q), dr = Math.abs(rr - r), ds = Math.abs(rs - s);
+    if (dq > dr && dq > ds) rq = -rr - rs;
+    else if (dr > ds) rr = -rq - rs;
+    out.push(cubeToOffset(rq, rr, orientation));
+  }
+  return out;
+}
+
 // Pixel center of a hex, in map space (before camera transform)
 export function hexCenter(c, r, size, orientation) {
   if (orientation === 'pointy') {
