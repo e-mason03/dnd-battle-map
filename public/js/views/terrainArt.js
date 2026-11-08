@@ -886,6 +886,31 @@ const ATMOSPHERE = {
     return true;
   },
 
+  // A torch in an iron bracket, flickering with a warm glow
+  torch(ctx, px, py, s, now, c, r) {
+    const cx = px + s / 2, cy = py + s * 0.42;
+    const flick = 0.88 + 0.12 * Math.sin(now / 80 + c * 5) * Math.sin(now / 131 + r * 3);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = radial(ctx, cx, cy, 0, s * 2.2 * flick, [[0, 'rgba(255,170,70,0.34)'], [0.45, 'rgba(255,140,50,0.12)'], [1, 'rgba(255,120,40,0)']]);
+    ctx.fillRect(cx - s * 2.4, cy - s * 2.4, s * 4.8, s * 4.8);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#4a3420';
+    ctx.fillRect(cx - s * 0.04, cy, s * 0.08, s * 0.36);
+    ctx.fillStyle = '#2b2b2f';
+    ctx.fillRect(cx - s * 0.09, cy + s * 0.02, s * 0.18, s * 0.06);
+    const sway = Math.sin(now / 110 + c) * s * 0.02;
+    for (const [col, k] of [['rgba(230,70,15,0.75)', 1], ['rgba(255,160,40,0.85)', 0.7], ['rgba(255,240,150,0.95)', 0.4]]) {
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.07 * k, cy);
+      ctx.quadraticCurveTo(cx - s * 0.08 * k, cy - s * 0.12 * k * flick, cx + sway, cy - s * 0.24 * k * flick);
+      ctx.quadraticCurveTo(cx + s * 0.08 * k, cy - s * 0.12 * k * flick, cx + s * 0.07 * k, cy);
+      ctx.closePath();
+      ctx.fill();
+    }
+    return true;
+  },
+
   darkness(ctx, px, py, s) {
     const cx = px + s / 2, cy = py + s / 2;
     ctx.fillStyle = radial(ctx, cx, cy, s * 0.2, s * 1.7, [[0, 'rgba(2,2,8,0.85)'], [0.6, 'rgba(2,2,8,0.45)'], [1, 'rgba(2,2,8,0)']]);

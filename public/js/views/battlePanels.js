@@ -12,7 +12,8 @@ import { TERRAINS, ELEVATIONS, FEATURES, MONSTER_TOKENS, PLAYER_TOKENS, ALL_TOKE
 import { h, toast, openModal, confirmDialog, promptDialog, field, pickFile, fmtTime } from '../ui/dom.js';
 import { uploadImage } from '../net.js';
 import { textureSwatch } from './textures.js';
-import { battleUI as ui, setTool, centerMap, exportPng, requestRender, renderHotbar } from './battle.js';
+import { battleUI as ui, setTool, centerMap, exportPng, requestRender, renderHotbar, isSeen } from './battle.js';
+import { VISION_MODES, AMBIENT } from '../core/vision.js';
 
 let tab = null;
 let placeHidden = false;
@@ -53,6 +54,23 @@ export function refreshTokensTab(root) {
   if (tab === 'tokens') buildSidebar(root);
 }
 
+// Line of sight / lighting for this map (saved with it)
+function visionControls() {
+  const v = store.state.map.vision || { mode: 'off', ambient: 'bright' };
+  const set = patch => dispatch({ type: 'battle.setVision', vision: { ...v, ...patch } });
+  const mode = h('select', { onchange: e => set({ mode: e.target.value }) },
+    Object.entries(VISION_MODES).map(([k, label]) => h('option', { value: k, selected: v.mode === k }, label)));
+  const ambient = h('select', { onchange: e => set({ ambient: e.target.value }) },
+    Object.entries(AMBIENT).map(([k, label]) => h('option', { value: k, selected: v.ambient === k }, label)));
+  return h('div', {},
+    h('div', { class: 'section-title' }, 'Vision & light'),
+    h('div', { class: 'row' }, field('Players see', mode), v.mode === 'light' ? field('Ambient light', ambient) : null),
+    v.mode === 'off' ? null : h('p', { class: 'hint' }, v.mode === 'light'
+      ? 'Players see what the party can see in light: Torch, Fire and Light features, tokens carrying light, and darkvision. Fog and Dark block sight.'
+      : 'Walls, closed doors, Fog and Dark block the party\'s line of sight.'),
+    v.mode === 'off' ? null : h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: ui.settings.previewVision, onchange: e => { ui.settings.previewVision = e.target.checked; requestRender(); } }), 'Preview as players see it'));
+}
+
 function toolBtn(label, swatch, active, onclick, title) {
   return h('button', { class: 'tool-btn' + (active ? ' selected' : ''), onclick, title: title || label }, swatch, h('span', {}, label));
 }
@@ -80,6 +98,8 @@ function buildTab() {
     h('div', { class: 'grid-3' }, Object.entries(FEATURES).filter(([, f]) => !f.obstacle).map(([k, f]) =>
       toolBtn(f.label, h('div', { class: 'swatch icon' }, f.icon), isPaint('feature', k), paint('feature', k), f.difficult ? `${f.label} (difficult terrain)` : f.label))),
     h('p', { class: 'hint' }, 'Right-drag erases the selected layer.'),
+
+    isDM() ? visionControls() : null,
 
     h('div', { class: 'section-title' }, 'Map'),
     h('div', { class: 'row' },
@@ -286,6 +306,7 @@ function tokensTab() {
       }, hiddenCount ? `👁 Reveal monsters (${hiddenCount} hidden)` : '🙈 Hide monsters') : null));
     for (const t of onMap) {
       if (t.hidden && !isDM()) continue;
+      if (!isDM() && !isSeen(t)) continue;
       const v = tokenView(s, t);
       out.push(h('div', { class: 'roster-row compact' + (ui.selectedId === t.id ? ' selected' : '') },
         h('div', { class: 'dot', style: { background: v.color } }, v.name.slice(0, 2)),
@@ -330,7 +351,7 @@ export function placeTokenFromTemplate(tpl, c, r) {
     const same = Object.values(s.battle.tokens).filter(t => t.type === m.type).length;
     token = {
       id, type: m.type, name: same ? `${m.label} ${same + 1}` : m.label, col: c, row: r, size: m.type === 'dragon' ? 2 : m.type === 'giant' || m.type === 'monstrosity' ? 2 : 1,
-      color: m.color, hp: m.hp, maxHp: m.hp, ac: m.ac, speed: m.speed || 30, initBonus: 1, side: 'enemy',
+      color: m.color, hp: m.hp, maxHp: m.hp, ac: m.ac, speed: m.speed || 30, initBonus: 1, side: 'enemy', darkvision: m.darkvision || 0,
       actions: parseActionText(m.actions), saves: {}, conditions: [], hidden: placeHidden && isDM(),
     };
     if (!isDM()) token.owner = store.me.name;
@@ -345,7 +366,7 @@ export function placeTokenFromTemplate(tpl, c, r) {
 // Log tab
 // ------------------------------------------------------------
 
-const LOG_ICON = { attack: '⚔', heal: '✚', death: '☠', combat: '⏱', roll: '🎲', note: '✎', travel: '🥾' };
+const LOG_ICON = { attack: '⚔', heal: '✚', death: '☠', combat: '⏱', roll: '🎲', note: '✎', travel: '🥾', conc: '🔮' };
 
 function logTab() {
   const entries = store.state.log.slice(-150);
@@ -396,6 +417,8 @@ export function openTokenEditor(id) {
   const side = h('select', {}, ['party', 'neutral', 'enemy'].map(x => h('option', { value: x, selected: (t.side || (pc ? 'party' : 'enemy')) === x }, x[0].toUpperCase() + x.slice(1))));
   const type = h('select', { disabled: pc }, ALL_TOKENS.map(d => h('option', { value: d.type, selected: t.type === d.type }, d.label)));
   const color = inp('color', v.color || tokenDef(t.type).color);
+  const light = inp('number', t.light || '', { min: 0, step: 5, placeholder: 'none' });
+  const darkvision = inp('number', t.darkvision ?? '', { min: 0, step: 30, placeholder: pc ? `${v.darkvision || 0} (sheet)` : '0' });
   const art = h('select', { disabled: pc },
     h('option', { value: '', selected: !t.art }, 'Auto (match name)'), h('option', { value: 'none', selected: t.art === 'none' }, 'None'),
     Object.entries(MONSTER_ART).map(([slug, label]) => h('option', { value: slug, selected: t.art === slug }, label)));
@@ -414,12 +437,13 @@ export function openTokenEditor(id) {
     field('HP', hp), field('Max HP', maxHp), field('Temp HP', temp), field('AC', ac),
     field('Speed', speed), field('Initiative bonus', initB), field('Initiative', init), field('Size', size),
     field('Icon', type), field('Color', color),
+    field('Carries light (bright ft)', light, 'A torch is 20: bright 20 ft, dim 20 ft more'), field('Darkvision (ft)', darkvision),
     pc ? null : field('Hover portrait', art),
     h('div', { class: 'span2' }, field('Conditions', condBox)),
     pc ? h('p', { class: 'span2 hint' }, 'Stats, saves and actions come from the character sheet (Party tab).') : h('div', { class: 'span2' },
       h('div', { class: 'section-title' }, 'Saving throw bonuses'),
       h('div', { class: 'saves-row' }, ABILITIES.map((k, i) => h('label', {}, h('small', {}, k.toUpperCase()), saves[i]))),
-      field('Actions', actions, 'One per line:  Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | damage type | range ft | radius ft | flags (bonus, slot:N, targets:N)')),
+      field('Actions', actions, 'One per line:  Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | damage type | range ft | area (20, 15 cone, 60 line, 10 cube) | flags (bonus, slot:N, targets:N, conc, up:1d6)')),
     isDM() && !pc ? field('Controlled by', owner) : null,
     isDM() ? h('label', { class: 'check span2' }, hidden, 'Hidden from players') : null,
   );
@@ -437,6 +461,8 @@ export function openTokenEditor(id) {
           const patch = {
             hp: Math.max(0, +hp.value | 0), maxHp: Math.max(1, +maxHp.value | 0), tempHp: Math.max(0, +temp.value | 0), ac: +ac.value | 0,
             conditions: [...conds], side: side.value, color: color.value,
+            light: Math.max(0, +light.value | 0) || null,
+            darkvision: darkvision.value === '' ? (pc ? null : 0) : Math.max(0, +darkvision.value | 0),
           };
           if (!pc) Object.assign(patch, {
             name: name.value.trim() || 'Token', speed: +speed.value | 0, initBonus: +initB.value | 0, size: +size.value, type: type.value, art: art.value || null,

@@ -240,6 +240,13 @@ h3 { font-size: 15px; }
 .hb-hpbar div { height: 100%; border-radius: 4px; transition: width .4s; }
 .hb-stats { display: flex; gap: 10px; font-size: 11px; color: var(--text2); flex-wrap: wrap; }
 .hb-stats .conds { color: #c9a0ff; }
+.hb-conc { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #c9a0ff; background: rgba(143,108,216,0.14); border: 1px solid rgba(143,108,216,0.4); border-radius: 6px; padding: 2px 4px 2px 8px; margin-top: 3px; width: fit-content; }
+.hb-conc.check { border-color: var(--gold); animation: conc-pulse 1.4s ease-in-out infinite; }
+.hb-conc .icon-btn { font-size: 11px; padding: 1px 4px; }
+@keyframes conc-pulse { 50% { box-shadow: 0 0 0 3px rgba(245,166,35,0.25); } }
+.hb-upcast { display: grid; grid-template-columns: repeat(3, auto); gap: 3px; align-content: center; padding: 0 8px; border-left: 1px solid var(--border); }
+.hb-upcast small { grid-column: 1 / -1; text-align: center; font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+.hb-upcast > button { min-width: 24px; }
 .hb-economy { display: flex; flex-direction: column; gap: 5px; }
 .pip.action, .pip.bonus { width: 14px; height: 14px; border-radius: 50%; display: block; }
 .pip.action { background: #2ecc71; box-shadow: 0 0 8px #2ecc71; }

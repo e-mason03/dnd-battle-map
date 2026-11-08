@@ -24,18 +24,21 @@ export const ELEVATIONS = [
   { level: 4, label: 'Wall',   bw: 4, bc: '#222',    marker: null, isWall: true },
 ];
 
+// light: [bright ft, dim ft] it sheds; lit: the cell itself is brightly lit;
+// obscures: blocks line of sight (you see it, not past it)
 export const FEATURES = {
   door:     { label: 'Door',    color: 'rgba(120,70,30,0.0)',  icon: '🚪', cover: 'total' },
   doorOpen: { label: 'Open Door', color: 'rgba(120,70,30,0.0)', icon: '🔓' },
   ravine:   { label: 'Ravine',  color: 'rgba(10,5,2,0.72)',    icon: '≋', difficult: true },
   pool:     { label: 'Pool',    color: 'rgba(20,70,110,0.65)', icon: '◉', difficult: true },
   stream:   { label: 'Stream',  color: 'rgba(30,90,150,0.55)', icon: '〜', difficult: true },
-  fire:     { label: 'Fire',    color: 'rgba(180,60,0,0.55)',  icon: '🔥' },
+  fire:     { label: 'Fire',    color: 'rgba(180,60,0,0.55)',  icon: '🔥', light: [10, 20] },
+  torch:    { label: 'Torch',   color: 'rgba(255,170,40,0.18)', icon: '🕯️', light: [20, 40] },
   web:      { label: 'Web',     color: 'rgba(180,180,180,0.35)', icon: '✦', difficult: true },
   rubble:   { label: 'Rubble',  color: 'rgba(90,80,70,0.55)',  icon: '⁂', difficult: true },
-  fog:      { label: 'Fog',     color: 'rgba(140,140,155,0.55)', icon: '◌' },
-  light:    { label: 'Light',   color: 'rgba(255,220,60,0.28)', icon: '☀' },
-  darkness: { label: 'Dark',    color: 'rgba(0,0,10,0.75)',    icon: '◼' },
+  fog:      { label: 'Fog',     color: 'rgba(140,140,155,0.55)', icon: '◌', obscures: true },
+  light:    { label: 'Light',   color: 'rgba(255,220,60,0.28)', icon: '☀', lit: true },
+  darkness: { label: 'Dark',    color: 'rgba(0,0,10,0.75)',    icon: '◼', obscures: true },
   spike:    { label: 'Spikes',  color: 'rgba(110,110,110,0.6)', icon: '△' },
   trap:     { label: 'Trap',    color: 'rgba(190,0,0,0.45)',   icon: '✕' },
   chest:    { label: 'Chest',   color: 'rgba(0,0,0,0)',        icon: '🧰' },
@@ -67,21 +70,21 @@ export const PLAYER_TOKENS = [
   { type: 'artificer', label: 'Artificer', abbr: 'Ar', color: '#9c640c' },
 ];
 
-// Generic monsters come with a sensible default stat block
+// Generic monsters come with a sensible default stat block (darkvision in ft)
 export const MONSTER_TOKENS = [
   { type: 'humanoid',    label: 'Bandit',      abbr: 'Hu', color: '#424949', hp: 11, ac: 12, actions: 'Scimitar | melee | 3 | 1d6+1 slashing | 5\nLight Crossbow | ranged | 3 | 1d8+1 piercing | 80' },
-  { type: 'goblin',      label: 'Goblin',      abbr: 'Gb', color: '#4d6b2f', hp: 7, ac: 15, actions: 'Scimitar | melee | 4 | 1d6+2 slashing | 5\nShortbow | ranged | 4 | 1d6+2 piercing | 80' },
+  { type: 'goblin',      label: 'Goblin',      abbr: 'Gb', color: '#4d6b2f', hp: 7, ac: 15, darkvision: 60, actions: 'Scimitar | melee | 4 | 1d6+2 slashing | 5\nShortbow | ranged | 4 | 1d6+2 piercing | 80' },
   { type: 'beast',       label: 'Wolf',        abbr: 'Be', color: '#935116', hp: 11, ac: 13, speed: 40, actions: 'Bite | melee | 4 | 2d4+2 piercing | 5' },
-  { type: 'undead',      label: 'Skeleton',    abbr: 'Un', color: '#717d7e', hp: 13, ac: 13, actions: 'Shortsword | melee | 4 | 1d6+2 piercing | 5\nShortbow | ranged | 4 | 1d6+2 piercing | 80' },
-  { type: 'monstrosity', label: 'Owlbear',     abbr: 'Mn', color: '#5b2333', hp: 59, ac: 13, actions: 'Beak | melee | 7 | 1d10+5 piercing | 5\nClaws | melee | 7 | 2d8+5 slashing | 5' },
-  { type: 'giant',       label: 'Ogre',        abbr: 'Gi', color: '#5d6d7e', hp: 59, ac: 11, actions: 'Greatclub | melee | 6 | 2d8+4 bludgeoning | 5\nJavelin | ranged | 6 | 2d6+4 piercing | 30' },
-  { type: 'dragon',      label: 'Young Dragon', abbr: 'Dg', color: '#7b241c', hp: 178, ac: 18, speed: 40, actions: 'Bite | melee | 10 | 2d10+6 piercing | 10\nClaw | melee | 10 | 2d6+6 slashing | 5\nFire Breath | save:dex | 17 | 16d6 fire | 30 | 15' },
-  { type: 'aberration',  label: 'Aberration',  abbr: 'Ab', color: '#4a235a', hp: 40, ac: 14, actions: 'Tentacle | melee | 5 | 2d6+3 bludgeoning | 10\nMind Blast | save:int | 13 | 3d8 psychic | 60 | 15' },
-  { type: 'construct',   label: 'Construct',   abbr: 'Co', color: '#566573', hp: 33, ac: 18, actions: 'Slam | melee | 4 | 1d6+2 bludgeoning | 5' },
-  { type: 'elemental',   label: 'Elemental',   abbr: 'El', color: '#a04000', hp: 102, ac: 13, actions: 'Touch | melee | 6 | 2d6+3 fire | 5' },
-  { type: 'fey',         label: 'Fey',         abbr: 'Fe', color: '#b03a8e', hp: 22, ac: 15, actions: 'Thorn Dart | ranged | 5 | 1d8+3 piercing | 60' },
-  { type: 'fiend',       label: 'Fiend',       abbr: 'Fn', color: '#7b241c', hp: 45, ac: 15, actions: 'Claw | melee | 6 | 2d6+4 slashing | 5\nHellfire | spell | 5 | 3d6 fire | 60' },
-  { type: 'ooze',        label: 'Ooze',        abbr: 'Oz', color: '#1d8348', hp: 22, ac: 8, speed: 10, actions: 'Pseudopod | melee | 3 | 1d6+1 acid | 5' },
+  { type: 'undead',      label: 'Skeleton',    abbr: 'Un', color: '#717d7e', hp: 13, ac: 13, darkvision: 60, actions: 'Shortsword | melee | 4 | 1d6+2 piercing | 5\nShortbow | ranged | 4 | 1d6+2 piercing | 80' },
+  { type: 'monstrosity', label: 'Owlbear',     abbr: 'Mn', color: '#5b2333', hp: 59, ac: 13, darkvision: 60, actions: 'Beak | melee | 7 | 1d10+5 piercing | 5\nClaws | melee | 7 | 2d8+5 slashing | 5' },
+  { type: 'giant',       label: 'Ogre',        abbr: 'Gi', color: '#5d6d7e', hp: 59, ac: 11, darkvision: 60, actions: 'Greatclub | melee | 6 | 2d8+4 bludgeoning | 5\nJavelin | ranged | 6 | 2d6+4 piercing | 30' },
+  { type: 'dragon',      label: 'Young Dragon', abbr: 'Dg', color: '#7b241c', hp: 178, ac: 18, speed: 40, darkvision: 120, actions: 'Bite | melee | 10 | 2d10+6 piercing | 10\nClaw | melee | 10 | 2d6+6 slashing | 5\nFire Breath | save:dex | 17 | 16d6 fire | 30 | 30 cone' },
+  { type: 'aberration',  label: 'Aberration',  abbr: 'Ab', color: '#4a235a', hp: 40, ac: 14, darkvision: 120, actions: 'Tentacle | melee | 5 | 2d6+3 bludgeoning | 10\nMind Blast | save:int | 13 | 3d8 psychic | 60 | 15' },
+  { type: 'construct',   label: 'Construct',   abbr: 'Co', color: '#566573', hp: 33, ac: 18, darkvision: 60, actions: 'Slam | melee | 4 | 1d6+2 bludgeoning | 5' },
+  { type: 'elemental',   label: 'Elemental',   abbr: 'El', color: '#a04000', hp: 102, ac: 13, darkvision: 60, actions: 'Touch | melee | 6 | 2d6+3 fire | 5' },
+  { type: 'fey',         label: 'Fey',         abbr: 'Fe', color: '#b03a8e', hp: 22, ac: 15, darkvision: 60, actions: 'Thorn Dart | ranged | 5 | 1d8+3 piercing | 60' },
+  { type: 'fiend',       label: 'Fiend',       abbr: 'Fn', color: '#7b241c', hp: 45, ac: 15, darkvision: 120, actions: 'Claw | melee | 6 | 2d6+4 slashing | 5\nHellfire | spell | 5 | 3d6 fire | 60' },
+  { type: 'ooze',        label: 'Ooze',        abbr: 'Oz', color: '#1d8348', hp: 22, ac: 8, speed: 10, darkvision: 60, actions: 'Pseudopod | melee | 3 | 1d6+1 acid | 5' },
   { type: 'plant',       label: 'Plant',       abbr: 'Pl', color: '#145a32', hp: 30, ac: 12, actions: 'Vine Lash | melee | 4 | 1d8+2 bludgeoning | 10' },
   { type: 'npc',         label: 'NPC',         abbr: 'NP', color: '#2e6b8a', hp: 10, ac: 10, actions: 'Club | melee | 2 | 1d4 bludgeoning | 5' },
 ];

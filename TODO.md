@@ -1,5 +1,0 @@
-- Line-of-sight / dynamic lighting on the battle map
-- Cone and line AoE shapes (currently approximated as circles)
-- Concentration reminders when a concentrating caster takes damage
-- Upcast damage scaling (higher slots are spent, but damage does not scale yet)
-- Remove the unused vendor libs in public/libs (three, cannon, teal, dice) or wire up 3D dice

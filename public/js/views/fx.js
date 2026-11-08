@@ -5,6 +5,7 @@
 // ============================================================
 
 import { DAMAGE_COLORS } from '../constants.js';
+import { areaOf } from '../core/aoe.js';
 
 const effects = [];
 const moves = new Map();    // tokenId → { path, start, dur }
@@ -82,8 +83,22 @@ export function playAction(op, centerOf) {
   const t0 = now();
   let impactDelay = 0;
 
-  // AoE spells: projectile to the point, then an explosion ring
-  if (op.point && a.radius) {
+  // Cones, lines and cubes: a wave sweeping out from the caster across the area
+  if (op.point && a.radius && a.shape && op.caster) {
+    const area = areaOf(a, op.caster, op.point);
+    const L = a.radius / 5 + (op.caster.size || 1) + 1;
+    const cells = [];
+    for (let r = Math.floor(op.caster.row - L); r <= op.caster.row + L; r++) {
+      for (let c = Math.floor(op.caster.col - L); c <= op.caster.col + L; c++) {
+        if (area.test(c, r)) cells.push([c, r, Math.hypot(c + 0.5 - area.origin[0], r + 0.5 - area.origin[1])]);
+      }
+    }
+    effects.push({ kind: 'area', cells, color, start: t0, dur: 900 + a.radius * 8 });
+    const far = cells.reduce((m, x) => Math.max(m, x[2]), 0);
+    for (const [c, r, d] of cells.filter((_, i) => i % 3 === 0)) burst(c + 0.5, r + 0.5, color, d * 55, 4, 0.5);
+    impactDelay = Math.min(700, far * 55) + 120;
+  } else if (op.point && a.radius) {
+    // Round AoE spells: projectile to the point, then an explosion ring
     const to = { x: op.point[0] + 0.5, y: op.point[1] + 0.5 };
     const travel = from ? 380 : 0;
     if (from) effects.push({ kind: 'orb', from, to, color, start: t0, dur: travel });
@@ -199,6 +214,18 @@ export function draw(ctx, cam, W, H) {
         ctx.shadowColor = e.color; ctx.shadowBlur = 18;
         ctx.fillStyle = '#fff';
         ctx.beginPath(); ctx.arc(X(x), Y(y), S * 0.1, 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+      case 'area': {
+        // Each cell flares as the wave reaches it (55 ms per cell of distance)
+        const elapsed = t - e.start;
+        for (const [c, r, d] of e.cells) {
+          const q = (elapsed - d * 55) / 520;
+          if (q < 0 || q > 1) continue;
+          ctx.fillStyle = hexA(e.color, 0.6 * (1 - q));
+          ctx.fillRect(X(c), Y(r), S, S);
+          if (q < 0.35) { ctx.fillStyle = 'rgba(255,255,255,' + (0.45 * (1 - q / 0.35)) + ')'; ctx.fillRect(X(c) + S * 0.2, Y(r) + S * 0.2, S * 0.6, S * 0.6); }
+        }
         break;
       }
       case 'blast': {
