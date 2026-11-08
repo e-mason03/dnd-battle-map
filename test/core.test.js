@@ -419,14 +419,16 @@ test('paths on open ground run straight, not off at an angle', () => {
   assert.ok(detour.every(([c, r]) => !(c === 3 && r >= 2 && r <= 4)));
 });
 
-import { monsterArtUrl } from '../public/js/constants.js';
+import { monsterArt, monsterArtUrl } from '../public/js/constants.js';
 
 test('monster portraits match token names, with overrides', () => {
   assert.equal(monsterArtUrl({ name: 'Goblin' }), 'img/monsters/goblin.jpg');
   assert.equal(monsterArtUrl({ name: 'Goblin 3' }), 'img/monsters/goblin.jpg', 'numbered copies share art');
   assert.equal(monsterArtUrl({ name: 'Vampire Spawn 2' }), 'img/monsters/vampire-spawn.jpg');
-  assert.equal(monsterArtUrl({ name: 'Bandit' }), null);
+  assert.equal(monsterArtUrl({ name: 'Owlbear' }), null);
   assert.equal(monsterArtUrl({ name: 'Strahd', art: 'vampire' }), 'img/monsters/vampire.jpg');
   assert.equal(monsterArtUrl({ name: 'Lich', art: 'none' }), null);
   assert.equal(monsterArtUrl({ name: 'Goblin', charId: 'c1' }), null, 'player characters never get monster art');
+  assert.equal(monsterArt({ name: 'Skeleton Archer 2' }).scene, true);
+  assert.equal(monsterArt({ name: 'Skeleton' }).scene, false);
 });

@@ -7,7 +7,7 @@
 
 import { store, subscribe, onOp, dispatch, isDM, canEdit, myToken, avatarOf } from '../store.js';
 import { tokenView, healthFraction, healthLabel } from '../core/ops.js';
-import { monsterArtUrl } from '../constants.js';
+import { monsterArt } from '../constants.js';
 import { resolveAction, describeAction, unarmedStrike } from '../core/actions.js';
 import { rollD20 } from '../core/dice.js';
 import { uid, escapeHtml } from '../core/util.js';
@@ -571,12 +571,12 @@ function updateTip(x, y, t) {
 const ART_W = 150, ART_H = 300;
 
 function updateArt(x, y, t) {
-  const url = monsterArtUrl(t);
-  if (!url) { hideArt(); return; }
-  const img = artCard.firstChild;
-  if (artCard.dataset.url !== url) {
-    artCard.dataset.url = url;
-    img.src = url;
+  const art = monsterArt(t);
+  if (!art) { hideArt(); return; }
+  if (artCard.dataset.url !== art.url) {
+    artCard.dataset.url = art.url;
+    artCard.firstChild.src = art.url;
+    artCard.classList.toggle('scene', art.scene);
   }
   artCard.lastChild.textContent = t.name;
   let left = x + 16, top = y - ART_H - 12;
