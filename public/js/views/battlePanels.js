@@ -427,7 +427,8 @@ export function openTokenEditor(id) {
   const saves = ABILITIES.map(k => inp('number', v.saves?.[k] ?? 0, { title: k.toUpperCase(), disabled: pc }));
   const actions = h('textarea', { rows: 6, disabled: pc, spellcheck: false }, actionsToText(v.actions));
   const conds = new Set(v.conditions);
-  const condBox = h('div', { class: 'chips' }, CONDITIONS.map(c => {
+  // Standard conditions plus any custom ones a cond: flag put on this creature
+  const condBox = h('div', { class: 'chips' }, [...new Set([...CONDITIONS, ...conds])].map(c => {
     const chip = h('button', { class: 'chip' + (conds.has(c) ? ' on' : ''), type: 'button', onclick: () => { conds.has(c) ? conds.delete(c) : conds.add(c); chip.classList.toggle('on'); } }, c);
     return chip;
   }));
@@ -443,7 +444,7 @@ export function openTokenEditor(id) {
     pc ? h('p', { class: 'span2 hint' }, 'Stats, saves and actions come from the character sheet (Party tab).') : h('div', { class: 'span2' },
       h('div', { class: 'section-title' }, 'Saving throw bonuses'),
       h('div', { class: 'saves-row' }, ABILITIES.map((k, i) => h('label', {}, h('small', {}, k.toUpperCase()), saves[i]))),
-      field('Actions', actions, 'One per line:  Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | damage type | range ft | area (20, 15 cone, 60 line, 10 cube) | flags (bonus, slot:N, targets:N, conc, up:1d6)')),
+      field('Actions', actions, 'One per line:  Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | damage type | range ft | area (20, 15 cone, 60 line, 10 cube) | flags (bonus, slot:N, targets:N, conc, up:1d6, cond:prone)')),
     isDM() && !pc ? field('Controlled by', owner) : null,
     isDM() ? h('label', { class: 'check span2' }, hidden, 'Hidden from players') : null,
   );

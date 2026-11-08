@@ -630,3 +630,34 @@ test('DM sets vision per map; it survives a resize and is saved with the map', (
   applyOp(s, op({ type: 'battle.loadMap', name: 'Crypt' }));
   assert.equal(s.map.vision.mode, 'light');
 });
+
+test('cond: flags apply conditions on a failed save or a hit', () => {
+  const s = withParty();
+  const blind = parseActionLine('Blindness/Deafness | save:con | 13 | | 30 | | slot:2, up:target, cond:blinded');
+  assert.deepEqual(blind.conds, ['blinded']);
+  assert.equal(actionToLine(blind), 'Blindness/Deafness | save:con | 13 | | 30 | | slot:2, up:target, cond:blinded');
+  const fire = parseActionLine('Faerie Fire | save:dex | 13 | | 60 | 20 cube | slot:1, conc, cond:outlined');
+  assert.equal(fire.shape, 'cube'); assert.equal(fire.conc, true); assert.deepEqual(fire.conds, ['outlined']);
+
+  const cast = (action, results) => applyOp(s, op({ type: 'battle.action', actorId: 'pc', action, results }, 'Pat'));
+  const opOf = a => ({ name: a.name, kind: a.kind, conds: a.conds });
+  // Goblin has no CON save bonus: 5 fails DC 13, 15 saves
+  cast(opOf(blind), [{ targetId: 'gob', save: { ability: 'con', dc: 13, d20: 15 } }]);
+  assert.ok(!s.battle.tokens.gob.conditions.includes('blinded'), 'a successful save avoids it');
+  cast(opOf(blind), [{ targetId: 'gob', save: { ability: 'con', dc: 13, d20: 5 } }]);
+  assert.ok(s.battle.tokens.gob.conditions.includes('blinded'));
+  assert.match(s.log.at(-1).text, /Goblin \(CON save 5 vs DC 13: failed\) — blinded/);
+
+  // Attacks apply it on a hit only, alongside damage
+  const trip = parseActionLine('Trip Attack | melee | 5 | 1d8+3 slashing | 5 | | cond:prone');
+  cast(opOf(trip), [{ targetId: 'gob', ac: 15, attack: { rolls: [3], value: 3, bonus: 5, total: 8 }, dmgRoll: 6 }]);
+  assert.ok(!s.battle.tokens.gob.conditions.includes('prone'), 'a miss does nothing');
+  cast(opOf(trip), [{ targetId: 'gob', ac: 15, attack: { rolls: [14], value: 14, bonus: 5, total: 19 }, dmgRoll: 2 }]);
+  assert.ok(s.battle.tokens.gob.conditions.includes('prone'));
+
+  // A hidden target's condition stays out of players' log like its name
+  applyOp(s, op({ type: 'battle.updateToken', id: 'gob', patch: { hidden: true } }));
+  cast(opOf(fire), [{ targetId: 'gob', save: { ability: 'dex', dc: 13, d20: 2 } }]);
+  assert.ok(s.battle.tokens.gob.conditions.includes('outlined'));
+  assert.ok(!JSON.stringify(redactState(s).log).includes('outlined'));
+});

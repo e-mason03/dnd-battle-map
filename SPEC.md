@@ -92,7 +92,9 @@ cancelled only before the first die is rolled. The DM's rolls stay instant.
 `Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | dice type | range ft | area | flags`
 where area is a radius (`20`) or size and shape (`15 cone`, `100 line`, `10 cube`), and
 flags are `bonus`, `slot:N`, `pact`, `targets:N`, `nohalf`, `conc`, `up:1d6` (extra dice
-per slot level above the spell's), `up:target` (extra target per level). D&D Beyond
+per slot level above the spell's), `up:target` (extra target per level), `cond:<name>`
+(applies that condition on a hit, a failed save, or to every target of an `auto`
+effect; repeatable, any name — e.g. `cond:prone`, `cond:outlined`). D&D Beyond
 imports fill in shapes, concentration, upcasting and darkvision.
 
 **Hexcrawl** — flat/pointy hex grid, terrain + icon + label painting, per-hex public

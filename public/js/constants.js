@@ -118,7 +118,7 @@ export const tokenDef = type => ALL_TOKENS.find(t => t.type === type) || MONSTER
 export const CONDITIONS = [
   'blinded', 'charmed', 'deafened', 'frightened', 'grappled', 'incapacitated', 'invisible',
   'paralyzed', 'petrified', 'poisoned', 'prone', 'restrained', 'stunned', 'unconscious',
-  'concentrating', 'blessed', 'hasted', 'raging', 'half cover', 'three-quarters cover', 'dead',
+  'concentrating', 'blessed', 'hasted', 'raging', 'outlined', 'half cover', 'three-quarters cover', 'dead',
 ];
 
 export const DAMAGE_COLORS = {
