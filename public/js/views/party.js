@@ -271,7 +271,7 @@ function openEditor(ch, isNew) {
       h('div', { class: 'span2' }, h('div', { class: 'section-title' }, 'Ability scores'), h('div', { class: 'saves-row' }, ABILITIES.map((k, i) => h('label', {}, h('small', {}, k.toUpperCase()), ab[i])))),
       h('div', { class: 'span2' }, h('div', { class: 'section-title' }, 'Saving throw bonuses'), h('div', { class: 'saves-row' }, ABILITIES.map((k, i) => h('label', {}, h('small', {}, k.toUpperCase()), sv[i])))),
       field('Portrait URL', f.avatar), field('Token color', f.color),
-      h('div', { class: 'span2' }, field('Attacks & spells', actions, 'Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | damage type | range ft | area (20, 15 cone, 60 line, 10 cube) | flags (bonus, slot:N, pact, targets:N, conc, up:1d6, up:target)'))),
+      h('div', { class: 'span2' }, field('Attacks & spells', actions, 'Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | damage type | range ft | area (20, 15 cone, 60 line, 10 cube) | flags (bonus, slot:N, pact, targets:N, conc, up:1d6, up:target, cond:prone)'))),
     actions: [{ label: 'Cancel' }, {
       label: 'Save', class: 'primary', onClick: () => {
         const classes = f.classes.value.split('/').map(s => s.trim()).filter(Boolean).map(s => {

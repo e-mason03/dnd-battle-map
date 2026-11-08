@@ -512,6 +512,8 @@ const REDUCERS = {
 
       resolveOutcome(r, a, tv);
       let desc = tName;
+      // cond: flags land on a hit, a failed save, or any target of an auto effect
+      const landed = r.attack ? r.hit : r.save ? !r.save.success : a.kind === 'auto';
       if (r.attack) {
         aStats.attacks++;
         recordD20(s, op.by, r.attack.rolls);
@@ -563,6 +565,13 @@ const REDUCERS = {
         concentrationLog(s, op, tName, res, tgtHidden);
       } else if (r.damage > 0) {
         desc += ` — ${r.damage} ${a.dmgType || ''}`.trimEnd();
+      }
+      if (landed && a.conds?.length && tgt) {
+        const rec = creatureRecord(s, tgt);
+        if (!(rec.conditions || []).includes('dead')) {
+          for (const c of a.conds) addCondition(rec, c);
+          desc += ` — ${a.conds.join(', ')}`;
+        }
       }
       parts.push(desc);
       if (!tgtHidden) playerParts.push(desc);

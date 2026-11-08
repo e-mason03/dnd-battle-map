@@ -146,7 +146,11 @@ export function playAction(op, centerOf) {
         }
       }
       const prefix = r.save?.success ? 'SAVED ' : '';
-      addText(to.x, to.y + (r.crit ? 0.25 : 0), r.damage > 0 ? `${prefix}-${r.damage}` : (prefix || 'NO EFFECT'), r.save?.success ? '#c8c8ff' : '#ff5a4f', delay + 20, r.crit);
+      // No damage: say what happened instead — the condition it caused, or a failed save
+      const landed = r.save ? !r.save.success : r.hit !== false;
+      const effect = landed && a.conds?.length ? a.conds.join(', ').toUpperCase() : r.save && !r.save.success ? 'FAILED' : 'NO EFFECT';
+      addText(to.x, to.y + (r.crit ? 0.25 : 0), r.damage > 0 ? `${prefix}-${r.damage}` : (prefix || effect), r.save?.success ? '#c8c8ff' : '#ff5a4f', delay + 20, r.crit);
+      if (r.damage > 0 && landed && a.conds?.length) addText(to.x, to.y + 0.45, a.conds.join(', ').toUpperCase(), '#ffb86b', delay + 160);
     }
   });
 }

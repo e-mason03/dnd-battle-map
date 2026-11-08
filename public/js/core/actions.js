@@ -11,7 +11,8 @@ import { COVER_BONUS } from './cover.js';
 //   kind: melee, ranged, spell, save:dex, heal, auto
 //   area: radius in ft ("20"), or a size and shape ("15 cone", "100 line", "10 cube")
 //   flags (comma separated): bonus, slot:3, pact, targets:3, nohalf, conc,
-//     up:1d6 (extra dice per slot level above the spell's), up:target (extra target per level)
+//     up:1d6 (extra dice per slot level above the spell's), up:target (extra target per level),
+//     cond:prone (condition applied on a hit / failed save; repeatable)
 export function parseActionLine(line) {
   const parts = line.split('|').map(s => s.trim());
   if (!parts[0]) return null;
@@ -36,6 +37,7 @@ export function parseActionLine(line) {
     else if (f === 'nohalf') a.half = false;
     else if (f === 'conc') a.conc = true;
     else if (f === 'up:target') a.upcast = { targets: 1 };
+    else if (f.startsWith('cond:') && f.length > 5) (a.conds ||= []).push(f.slice(5).trim());
     else if (/^up:\d+d\d+$/.test(f)) a.upcast = { dice: f.slice(3) };
     else if (f.startsWith('slot:')) a.slot = parseInt(f.slice(5), 10) || 0;
     else if (f.startsWith('targets:')) a.targets = Math.max(1, parseInt(f.slice(8), 10) || 1);
@@ -47,9 +49,10 @@ export function actionToLine(a) {
   const kind = a.kind === 'save' ? `save:${a.save}` : a.kind;
   const num = a.kind === 'save' ? a.dc : (a.bonus ?? 0);
   const flags = [a.cost === 'bonus' && 'bonus', a.slot && `slot:${a.slot}`, a.pact && 'pact', a.targets > 1 && `targets:${a.targets}`, a.half === false && 'nohalf',
-    a.conc && 'conc', a.upcast?.dice && `up:${a.upcast.dice}`, a.upcast?.targets && 'up:target'].filter(Boolean).join(', ');
+    a.conc && 'conc', a.upcast?.dice && `up:${a.upcast.dice}`, a.upcast?.targets && 'up:target', ...(a.conds || []).map(c => `cond:${c}`)].filter(Boolean).join(', ');
   const area = a.radius ? `${a.radius}${a.shape ? ' ' + a.shape : ''}` : '';
-  return [a.name, kind, num, `${a.damage || ''} ${a.dmgType || ''}`.trim(), a.range || '', area, flags].join(' | ').replace(/(\s\|\s)+$/, '');
+  return [a.name, kind, num, `${a.damage || ''} ${a.dmgType || ''}`.trim(), a.range || '', area, flags].join(' | ')
+    .replace(/(\s\|\s)+$/, '').replace(/\|  (?=\|)/g, '| ');   // empty fields read "| |
 }
 
 export const parseActionText = text => String(text || '').split('\n').map(parseActionLine).filter(Boolean);
@@ -70,6 +73,7 @@ export function describeAction(a) {
   if (a.slot) bits.push(a.pact ? 'pact slot' : `lvl ${a.slot} slot`);
   if (a.upcast) bits.push(`+${a.upcast.dice || '1 target'} per higher slot`);
   if (a.conc) bits.push('concentration');
+  if (a.conds?.length) bits.push(a.conds.join(', '));
   if (a.cost === 'bonus') bits.push('bonus action');
   return bits.join(' · ');
 }
@@ -141,6 +145,7 @@ export function actionOp(actorView, action, results, point = null) {
       name: action.name, kind: action.kind, dmgType: action.dmgType, cost: action.cost,
       slot: action.slot || 0, pact: !!action.pact, radius: action.radius || 0, isSpell: !!action.isSpell || !!action.slot,
       half: action.half !== false, ...(action.shape && { shape: action.shape, range: action.range }), ...(action.conc && { conc: action.baseName || action.name }),
+      ...(action.conds?.length && { conds: action.conds }),
     },
     point,
     // Shaped areas (cone, line, cube) are laid out from the caster's space
