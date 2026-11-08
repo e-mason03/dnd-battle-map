@@ -100,7 +100,11 @@ imports fill in shapes, concentration, upcasting and darkvision.
 **Hexcrawl** — flat/pointy hex grid, terrain + icon + label painting, per-hex public
 and DM notes, map-image upload with size/offset/scale alignment, fog of war, party
 marker travel (distance in hexes and miles, auto-reveal, logged to the adventure log),
-day counter.
+day counter. DM-placed paths (`core/hexPaths.js`): drag across hexes to lay roads and
+trails (right-drag removes); each hex's `path` lists the neighbors it connects to. They
+draw over terrain and under icons, never replacing either. The party takes the quickest
+route, and steps along a path are 25% faster (cost 0.8), which the route preview,
+distance/days tooltip and travel log reflect.
 
 **Party** — import from D&D Beyond by character link (fetched through the room; the
 sheet must be Public) or by uploading/pasting the v5 character JSON; re-sync keeps

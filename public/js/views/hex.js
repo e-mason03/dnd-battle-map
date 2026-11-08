@@ -5,7 +5,8 @@
 // ============================================================
 
 import { store, subscribe, dispatch, isDM, canEdit, fileUrl } from '../store.js';
-import { hexKey, parseHexKey, hexCenter, hexCorners, pixelToHex, hexDistance } from '../core/hexmath.js';
+import { hexKey, parseHexKey, hexCenter, hexCorners, pixelToHex, hexLine } from '../core/hexmath.js';
+import { pathLinks, linkPatches, unlinkPatches, travelRoute, travelDays, PATH_SPEED } from '../core/hexPaths.js';
 import { HEX_TERRAINS, HEX_ICONS } from '../constants.js';
 import { h, toast, openModal, confirmDialog, promptDialog, field, pickFile, timeAgo } from '../ui/dom.js';
 import { uploadImage } from '../net.js';
@@ -14,7 +15,7 @@ import { escapeHtml } from '../core/util.js';
 
 const ui = {
   cam: { x: 40, y: 40 }, zoom: 1,
-  tool: { mode: 'inspect' },  // inspect | terrain | icon | label | erase | reveal | hide | party
+  tool: { mode: 'inspect' },  // inspect | terrain | icon | label | erase | reveal | hide | party | path
   selected: null,             // hex key
   hover: null,                // [c, r]
   drag: null,
@@ -128,6 +129,7 @@ function draw() {
   const party = hx.party;
   const overlays = [];
   const fogHexes = [];
+  const pathHexes = [];
   for (let r = 0; r < hx.rows; r++) {
     for (let c = 0; c < hx.cols; c++) {
       const k = hexKey(c, r);
@@ -170,6 +172,7 @@ function draw() {
       ctx.closePath();
       ctx.stroke();
 
+      if (data.path?.length) pathHexes.push({ k, sx, sy, fogged });
       if (data.icon || data.label || (dm && (data.note || data.dmNote))) overlays.push({ sx, sy, data, fogged });
       if (fogged && dm) {
         ctx.fillStyle = 'rgba(120,130,150,0.35)';
@@ -181,6 +184,9 @@ function draw() {
       }
     }
   }
+
+  // Paths: over the terrain, under fog, icons and labels
+  drawPaths(pathHexes, size);
 
   hasFog = ui.visible && fogHexes.length > 0;
   drawFog(fogHexes, size, dm);
@@ -228,13 +234,18 @@ function draw() {
   if (party) {
     const cen = hexCenter(party[0], party[1], hx.size, hx.orientation);
     const [sx, sy] = toScreen(cen.x + hx.offsetX, cen.y + hx.offsetY);
-    if (ui.tool.mode === 'party' && ui.hover) {
-      const hc = hexCenter(ui.hover[0], ui.hover[1], hx.size, hx.orientation);
-      const [tx, ty] = toScreen(hc.x + hx.offsetX, hc.y + hx.offsetY);
+    const route = ui.tool.mode === 'party' && ui.hover ? routeTo(ui.hover) : null;
+    if (route?.steps) {
       ctx.strokeStyle = 'rgba(245,166,35,0.9)';
       ctx.lineWidth = 3;
       ctx.setLineDash([8, 6]);
-      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke();
+      ctx.beginPath();
+      route.route.forEach(([c, r], i) => {
+        const hc = hexCenter(c, r, hx.size, hx.orientation);
+        const [tx, ty] = toScreen(hc.x + hx.offsetX, hc.y + hx.offsetY);
+        if (i) ctx.lineTo(tx, ty); else ctx.moveTo(tx, ty);
+      });
+      ctx.stroke();
       ctx.setLineDash([]);
     }
     const rad = Math.max(8, size * 0.42);
@@ -251,6 +262,48 @@ function draw() {
     ctx.textBaseline = 'middle';
     ctx.fillText('🛡️', sx, sy + 1);
   }
+}
+
+// ------------------------------------------------------------
+// Paths — each hex draws its half of every road it's on, from its center
+// to the shared edge, bending through the center when the road turns
+// ------------------------------------------------------------
+
+function drawPaths(list, size) {
+  if (!list.length) return;
+  const hx = store.state.hex;
+  const screenOf = k => {
+    const cen = hexCenter(...parseHexKey(k), hx.size, hx.orientation);
+    return toScreen(cen.x + hx.offsetX, cen.y + hx.offsetY);
+  };
+  const shapes = list.map(({ k, sx, sy, fogged }) => ({
+    sx, sy, fogged,
+    ends: pathLinks(hx, k).map(nk => { const [nx, ny] = screenOf(nk); return [(sx + nx) / 2, (sy + ny) / 2]; }),
+  })).filter(p => p.ends.length);
+  const trace = ({ sx, sy, ends }) => {
+    ctx.beginPath();
+    if (ends.length === 2) {
+      ctx.moveTo(...ends[0]);
+      ctx.quadraticCurveTo(sx, sy, ...ends[1]);
+    } else {
+      for (const e of ends) { ctx.moveTo(sx, sy); ctx.lineTo(...e); }
+    }
+  };
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // Dark verge first for every hex, then the road surface, so junctions join cleanly
+  for (const [color, width, min] of [['rgba(48,32,16,0.75)', 0.2, 3.5], ['#d8bf86', 0.11, 2]]) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(min, size * width);
+    for (const p of shapes) { ctx.globalAlpha = p.fogged ? 0.55 : 1; trace(p); ctx.stroke(); }
+  }
+  // Wheel ruts down the middle
+  ctx.strokeStyle = 'rgba(120,90,50,0.55)';
+  ctx.lineWidth = Math.max(1, size * 0.025);
+  ctx.setLineDash([size * 0.12, size * 0.1]);
+  for (const p of shapes) { ctx.globalAlpha = p.fogged ? 0.55 : 1; trace(p); ctx.stroke(); }
+  ctx.restore();
 }
 
 // ------------------------------------------------------------
@@ -397,6 +450,32 @@ function drawGlyph(t, x, y, s) {
 // Input
 // ------------------------------------------------------------
 
+// Applies hex.paint patches locally right away and queues them for the room
+function queuePatches(patches) {
+  const hexes = store.state.hex.hexes;
+  for (const { k, patch } of patches) {
+    const next = { ...(hexes[k] || {}) };
+    for (const [pk, pv] of Object.entries(patch)) { if (pv === null) delete next[pk]; else next[pk] = pv; }
+    if (Object.keys(next).length) hexes[k] = next; else delete hexes[k];
+    buffer.push({ k, patch });
+  }
+  if (patches.length) {
+    if (!flushT) flushT = setTimeout(flush, 150);
+    dirty = true;
+  }
+}
+
+function routeTo(to) {
+  const hx = store.state.hex;
+  return hx.party ? travelRoute(hx, hx.party, to) : null;
+}
+
+function moveParty(to) {
+  const r = routeTo(to);
+  const t = store.state.hex.hexes[hexKey(...to)]?.terrain;
+  dispatch({ type: 'hex.moveParty', to, dist: r?.steps || 0, road: r?.roadSteps || 0, terrainLabel: HEX_TERRAINS[t]?.label?.toLowerCase() });
+}
+
 function flush() {
   if (buffer.length) dispatch({ type: 'hex.paint', hexes: buffer });
   buffer = [];
@@ -432,12 +511,19 @@ function bindInput() {
     const hx = hexAt(e.clientX - rect.left, e.clientY - rect.top);
     const editor = canEdit();
     const brush = ['terrain', 'icon', 'erase', 'reveal', 'hide'].includes(ui.tool.mode);
+    const pathTool = ui.tool.mode === 'path' && isDM();
 
-    if (e.button === 1 || e.button === 2 && !(brush && editor) || (e.button === 0 && !hx)) {
+    if (e.button === 1 || e.button === 2 && !(brush && editor) && !pathTool || (e.button === 0 && !hx)) {
       ui.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: ui.cam.x, cy: ui.cam.y };
       return;
     }
     if (!hx) return;
+    if (ui.tool.mode === 'path' && isDM()) {
+      // Drag to lay a path through each hex; right-drag tears paths up
+      if (e.button === 2) { ui.drag = { kind: 'unpath' }; queuePatches(unlinkPatches(store.state.hex, hexKey(...hx))); }
+      else ui.drag = { kind: 'path', last: hx };
+      return;
+    }
     if (brush && editor) {
       ui.drag = { kind: 'paint', erase: e.button === 2 };
       paintHex(hx, e.button === 2);
@@ -450,9 +536,7 @@ function bindInput() {
       return;
     }
     if (ui.tool.mode === 'party' && isDM() && e.button === 0) {
-      const from = store.state.hex.party;
-      const t = store.state.hex.hexes[hexKey(...hx)]?.terrain;
-      dispatch({ type: 'hex.moveParty', to: hx, dist: from ? hexDistance(from, hx, store.state.hex.orientation) : 0, terrainLabel: HEX_TERRAINS[t]?.label?.toLowerCase() });
+      moveParty(hx);
       return;
     }
     ui.selected = hexKey(...hx);
@@ -477,12 +561,17 @@ function bindInput() {
       ui.hover = hx;
       dirty = true;
       if (ui.drag?.kind === 'paint' && hx) paintHex(hx, ui.drag.erase);
+      if (ui.drag?.kind === 'path' && hx) {
+        queuePatches(linkPatches(store.state.hex, hexLine(ui.drag.last, hx, store.state.hex.orientation)));
+        ui.drag.last = hx;
+      }
+      if (ui.drag?.kind === 'unpath' && hx) queuePatches(unlinkPatches(store.state.hex, hexKey(...hx)));
     }
     updateTip(mx, my, hx);
   });
 
   window.addEventListener('mouseup', () => {
-    if (ui.drag?.kind === 'paint') flush();
+    if (['paint', 'path', 'unpath'].includes(ui.drag?.kind)) flush();
     ui.drag = null;
   });
 
@@ -516,9 +605,14 @@ function updateTip(x, y, hx) {
     if (d.label) html += ` — ${escapeHtml(d.label)}`;
     if (d.terrain) html += `<br>${HEX_TERRAINS[d.terrain]?.label || d.terrain}`;
   } else html += '<br><i>Unexplored</i>';
+  if (!fogged && d.path?.length) html += '<br><small>🛤 On a path (25% faster travel)</small>';
   if (s.party && (ui.tool.mode === 'party' || !fogged)) {
-    const dist = hexDistance(s.party, hx, s.orientation);
-    if (dist) html += `<br><small>${dist} hex · ${dist * (s.milesPerHex || 6)} mi · ~${Math.max(1, Math.round(dist * (s.milesPerHex || 6) / 24 * 10) / 10)} days</small>`;
+    const route = routeTo(hx);
+    if (route?.steps) {
+      const days = travelDays(s, route);
+      html += `<br><small>${route.steps} hex · ${route.steps * (s.milesPerHex || 6)} mi · ~${days} day${days === 1 ? '' : 's'}` +
+        (route.roadSteps ? ` · ${route.roadSteps} by path` : '') + '</small>';
+    }
   }
   tip.innerHTML = html;
   tip.style.display = 'block';
@@ -560,6 +654,9 @@ function paintPanel() {
       isDM() ? tb('reveal', 'Reveal', h('div', { class: 'swatch icon' }, '👁')) : null,
       isDM() ? tb('hide', 'Fog', h('div', { class: 'swatch icon' }, '🌫')) : null,
       isDM() ? tb('party', 'Move party', h('div', { class: 'swatch icon' }, '🛡️')) : null),
+    isDM() ? h('div', { class: 'section-title' }, 'Paths') : null,
+    isDM() ? h('div', { class: 'grid-3' }, tb('path', 'Road / trail', h('div', { class: 'swatch icon' }, '🛤'))) : null,
+    isDM() && t.mode === 'path' ? h('p', { class: 'hint' }, `Drag across hexes to lay a path · right-drag to remove. Travel along a path is ${Math.round((PATH_SPEED - 1) * 100)}% faster. Paths sit over terrain and under icons.`) : null,
     h('div', { class: 'section-title' }, 'Terrain'),
     h('div', { class: 'grid-3' }, Object.entries(HEX_TERRAINS).map(([k, v]) => tb('terrain', v.label, h('div', { class: 'swatch hex', style: { background: v.color } }), { value: k }))),
     h('div', { class: 'section-title' }, 'Icons'),
@@ -611,8 +708,8 @@ function setupPanel() {
       h('button', { class: 'btn', onclick: () => revealAll(false) }, 'Fog all')) : null,
     h('div', { class: 'section-title' }, 'Danger zone'),
     h('button', { class: 'btn danger wide', onclick: async () => {
-      if (!await confirmDialog('Erase every painted hex, icon, label and note?', 'Erase all', true)) return;
-      dispatch({ type: 'hex.paint', hexes: Object.keys(hx.hexes).map(k => ({ k, patch: { terrain: null, icon: null, label: null, note: null, dmNote: null, revealed: null } })) });
+      if (!await confirmDialog('Erase every painted hex, icon, label, path and note?', 'Erase all', true)) return;
+      dispatch({ type: 'hex.paint', hexes: Object.keys(hx.hexes).map(k => ({ k, patch: { terrain: null, icon: null, label: null, note: null, dmNote: null, revealed: null, path: null } })) });
     } }, 'Clear hex map'),
     h('button', { class: 'btn wide', onclick: fitView }, 'Fit to screen'),
   ];
@@ -635,13 +732,13 @@ function inspectPanel() {
     h('div', { class: 'inspect-card' },
       h('div', { class: 'inspect-head' },
         h('span', { class: 'big-icon' }, HEX_ICONS[d.icon] || '⬡'),
-        h('div', { class: 'grow' }, h('b', {}, d.label || `Hex ${hexLabel(c, r)}`), h('small', {}, fogged ? 'Unexplored' : (HEX_TERRAINS[d.terrain]?.label || 'Unpainted'))),
+        h('div', { class: 'grow' }, h('b', {}, d.label || `Hex ${hexLabel(c, r)}`), h('small', {}, fogged ? 'Unexplored' : (HEX_TERRAINS[d.terrain]?.label || 'Unpainted') + (d.path?.length ? ' · 🛤 path' : ''))),
         h('button', { class: 'icon-btn', onclick: () => { ui.selected = null; buildSide(); dirty = true; } }, '✕')),
       !fogged && d.note ? h('p', { class: 'note' }, d.note) : null,
       isDM() && d.dmNote ? h('p', { class: 'note dm' }, '🔒 ', d.dmNote) : null,
       canEdit() ? h('div', { class: 'row' },
         h('button', { class: 'btn small', onclick: () => editHex(k) }, 'Edit hex'),
-        isDM() ? h('button', { class: 'btn small', onclick: () => dispatch({ type: 'hex.moveParty', to: [c, r], dist: hx.party ? hexDistance(hx.party, [c, r], hx.orientation) : 0, terrainLabel: HEX_TERRAINS[d.terrain]?.label?.toLowerCase() }) }, 'Move party here') : null) : null),
+        isDM() ? h('button', { class: 'btn small', onclick: () => moveParty([c, r]) }, 'Move party here') : null) : null),
   ];
   return out;
 }
@@ -684,7 +781,7 @@ function travelPanel() {
         const note = await promptDialog('Advance day', 'What happened? (optional)', '');
         if (note !== null) dispatch({ type: 'hex.advanceDay', n: 1, note: note.trim() });
       } }, '☀ Next day')) : null,
-    ui.tool.mode === 'party' ? h('p', { class: 'hint' }, 'Click a hex to move the party there. Esc to stop.') : null,
+    ui.tool.mode === 'party' ? h('p', { class: 'hint' }, 'Click a hex to move the party there. They take the quickest route — paths are 25% faster. Esc to stop.') : null,
     h('div', { class: 'section-title' }, 'Recent travel'),
     recent.length ? h('div', { class: 'list' }, recent.map(e => h('div', { class: 'log-line' }, h('span', { class: 'ic' }, e.icon === 'sun' ? '☀' : '🥾'),
       h('div', { class: 'grow' }, h('div', {}, e.title), e.text ? h('small', {}, e.text) : null, h('small', {}, ' · ' + timeAgo(e.ts))))))

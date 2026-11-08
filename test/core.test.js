@@ -661,3 +661,56 @@ test('cond: flags apply conditions on a failed save or a hit', () => {
   assert.ok(s.battle.tokens.gob.conditions.includes('outlined'));
   assert.ok(!JSON.stringify(redactState(s).log).includes('outlined'));
 });
+
+import { hexLine } from '../public/js/core/hexmath.js';
+import { linkPatches, unlinkPatches, travelRoute, travelDays, pathLinks } from '../public/js/core/hexPaths.js';
+
+test('hex paths: laying, removing, and 25% faster travel along them', () => {
+  for (const o of ['flat', 'pointy']) {
+    const line = hexLine([1, 1], [7, 4], o);
+    assert.equal(line.length, hexDistance([1, 1], [7, 4], o) + 1);
+    for (let i = 1; i < line.length; i++) assert.equal(hexDistance(line[i - 1], line[i], o), 1, 'a line has no gaps');
+  }
+
+  const s = initialState();
+  const hex = s.hex;   // 18 × 12, flat, 6 mi per hex
+  hex.hexes['3,0'] = { terrain: 'forest', icon: 'inn' };
+  const paint = patches => applyOp(s, op({ type: 'hex.paint', hexes: patches }));
+
+  // A road along row 0 from col 0 to col 10
+  paint(linkPatches(hex, hexLine([0, 0], [10, 0], 'flat')));
+  assert.deepEqual(hex.hexes['3,0'], { terrain: 'forest', icon: 'inn', path: ['2,0', '4,0'] }, 'terrain and icons are kept');
+  assert.deepEqual(pathLinks(hex, '0,0'), ['1,0']);
+  paint(linkPatches(hex, hexLine([5, 0], [5, 3], 'flat')));
+  assert.equal(pathLinks(hex, '5,0').length, 3, 'a junction');
+
+  // Off-road, row 6: straight across, 10 steps. Row 1 hops onto the road.
+  const wild = travelRoute(hex, [0, 6], [10, 6]);
+  assert.deepEqual([wild.steps, wild.roadSteps, wild.cost], [10, 0, 10]);
+  const road = travelRoute(hex, [0, 0], [10, 0]);
+  assert.deepEqual([road.steps, road.roadSteps, road.cost], [10, 10, 8], 'path steps cost 0.8');
+  assert.equal(travelDays(hex, road), 2, '60 mi at 1.25 × 24 mi/day');
+  assert.equal(travelDays(hex, wild), 2.5);
+  const near = travelRoute(hex, [0, 1], [10, 1]);
+  assert.ok(near.roadSteps > 0 && near.cost < 10, 'routes onto a nearby road when that is quicker');
+
+  // The travel log says how much was by road
+  applyOp(s, op({ type: 'hex.moveParty', to: [0, 0], dist: 0 }));
+  applyOp(s, op({ type: 'hex.moveParty', to: [10, 0], dist: road.steps, road: road.roadSteps }));
+  assert.match(s.adventure.at(-1).text, /travels 10 hexes \(60 mi\) to the wilds, all of them along the road\./);
+
+  // Tearing up a hex removes both halves of each link
+  paint(unlinkPatches(hex, '5,0'));
+  assert.equal(hex.hexes['5,0']?.path, undefined);
+  assert.deepEqual(hex.hexes['4,0'].path, ['3,0']);
+  assert.deepEqual(hex.hexes['5,1'].path, ['5,2'], 'the rest of that branch stays');
+  paint(unlinkPatches(hex, '1,0'));
+  assert.equal(hex.hexes['0,0'].path, undefined, 'a road end left with no links drops its path');
+
+  // Players never get paths in fogged hexes
+  hex.fog = true;
+  hex.hexes['3,0'].revealed = true;
+  const seen = redactState(s).hex.hexes;
+  assert.deepEqual(seen['3,0'].path, ['2,0', '4,0']);
+  assert.equal(seen['2,0'], undefined);
+});
