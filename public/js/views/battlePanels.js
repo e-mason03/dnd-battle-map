@@ -14,6 +14,7 @@ import { uploadImage } from '../net.js';
 import { textureSwatch } from './textures.js';
 import { battleUI as ui, setTool, centerMap, exportPng, requestRender, renderHotbar, isSeen } from './battle.js';
 import { VISION_MODES, AMBIENT } from '../core/vision.js';
+import { PRESET_MAPS, presetMapOp } from '../maps/presets.js';
 
 let tab = null;
 let placeHidden = false;
@@ -187,6 +188,14 @@ function savedMaps() {
       dispatch({ type: 'battle.saveMap', name: name.trim().slice(0, 60), withTokens });
       toast('Map saved');
     } }, '💾 Save current map'),
+    h('div', { class: 'section-title' }, 'Built-in maps'),
+    ...PRESET_MAPS.map(p => h('div', { class: 'list-row' },
+      h('div', { class: 'grow' }, h('div', {}, p.name), h('small', { class: 'muted' }, p.description)),
+      h('button', { class: 'btn small', onclick: async () => {
+        if (!await confirmDialog(`Load "${p.name}"? The current map and its monsters are replaced; the party's tokens move to the entrance.`, 'Load')) return;
+        dispatch(presetMapOp(p, store.state.battle.tokens));
+        toast(`${p.name} loaded — save it to your maps to keep changes`);
+      } }, 'Load'))),
   ];
 }
 

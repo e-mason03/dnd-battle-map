@@ -45,7 +45,9 @@ are throttled (8 per minute per room).
 ## Features
 
 **Battle map** — terrain / elevation / walls / feature painting, background image
-upload with grid fitting, saved map library, PNG and JSON export, v1 JSON import.
+upload with grid fitting, saved map library, built-in maps any DM can load
+(`maps/presets.js`, drawn as text; loading moves the party to the entrance), PNG and
+JSON export, v1 JSON import.
 BG3-style play: select a token, hover to preview a 5e-costed path (difficult terrain,
 walls and enemies block), click to move (animated). The hotbar shows HP, AC, speed
 left, action/bonus pips, spell slots and actions (hotkeys 1–9). Pick an action → range

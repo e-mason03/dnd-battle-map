@@ -724,3 +724,45 @@ test('Jackal template (MM / SRD stat block)', () => {
   assert.deepEqual([bite.name, bite.kind, bite.bonus, bite.damage, bite.dmgType, bite.range], ['Bite', 'melee', 1, '1d4-1', 'piercing', 5]);
   assert.equal(new Set(MONSTER_TOKENS.map(m => m.type)).size, MONSTER_TOKENS.length, 'template types are unique');
 });
+
+import { PRESET_MAPS, presetMapOp } from '../public/js/maps/presets.js';
+
+test("built-in map: Owlbears' Lair is a playable cave", () => {
+  const preset = PRESET_MAPS.find(p => p.name === "Owlbears' Lair");
+  const { map, tokens } = preset.build();
+  assert.ok(map.cells.every(row => row.length === map.width) && map.cells.length === map.height);
+  const cells = map.cells.flat();
+  assert.ok(cells.some(c => c.terrain === 'lava'), 'a lava pool');
+  assert.ok(new Set(cells.filter(c => c.elevation < 4).map(c => c.elevation)).size >= 3, 'varying height');
+
+  const owlbears = tokens.filter(t => t.name.startsWith('Owlbear'));
+  assert.equal(owlbears.length, 2);
+  const taken = new Set();
+  for (const t of owlbears) {
+    assert.deepEqual([t.size, t.hp, t.ac, t.speed], [2, 59, 13, 40]);
+    for (let dr = 0; dr < 2; dr++) for (let dc = 0; dc < 2; dc++) {
+      const k = `${t.col + dc},${t.row + dr}`;
+      const cell = map.cells[t.row + dr][t.col + dc];
+      assert.ok(cell.elevation < 4 && !['boulder', 'pillar'].includes(cell.feature) && cell.terrain !== 'lava', `${t.name} stands on open floor`);
+      assert.ok(!taken.has(k), 'owlbears do not overlap');
+      taken.add(k);
+    }
+  }
+
+  // The party can walk from the entrance to each owlbear
+  for (const [c, r] of preset.start) assert.equal(map.cells[r][c].elevation, 0);
+  const { dist } = reachable(map, preset.start[0], 9999, new Map(), 1);
+  for (const t of owlbears) {
+    const near = [[t.col - 1, t.row], [t.col + 2, t.row], [t.col, t.row - 1], [t.col, t.row + 2], [t.col - 1, t.row + 1], [t.col + 2, t.row + 1]];
+    assert.ok(near.some(([c, r]) => dist.has(cellKey(c, r))), `${t.name} is reachable`);
+  }
+
+  // Loading moves PCs to the entrance and replaces the old monsters
+  const s = withParty();
+  const load = presetMapOp(preset, s.battle.tokens);
+  applyOp(s, op(load));
+  assert.equal(s.map.width, map.width);
+  assert.deepEqual([s.battle.tokens.pc.col, s.battle.tokens.pc.row], preset.start[0]);
+  assert.ok(!s.battle.tokens.gob, 'old monsters are gone');
+  assert.equal(Object.values(s.battle.tokens).filter(t => t.name?.startsWith('Owlbear')).length, 2);
+});
