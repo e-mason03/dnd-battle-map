@@ -15,7 +15,7 @@ import { h, $, toast } from '../ui/dom.js';
 import { drawScene, colLabel } from './battleRender.js';
 import { reachable, buildPath, cellKey, feetBetween } from './pathing.js';
 import * as fx from './fx.js';
-import { buildSidebar, openTokenEditor, openStartCombat, placeTokenFromTemplate } from './battlePanels.js';
+import { buildSidebar, refreshTokensTab, openTokenEditor, openStartCombat, placeTokenFromTemplate } from './battlePanels.js';
 import { sendRaw, onFx } from '../net.js';
 import { openRollWindow } from '../ui/rollWindow.js';
 import { computeCover, withManualCover, COVER_BONUS, COVER_LABEL } from '../core/cover.js';
@@ -80,6 +80,8 @@ export function mountBattle(root) {
     }
     if (changed.has('*') || changed.has('meta') || changed.has('npcs') || changed.has('party') || changed.has('log') || changed.has('presence')) {
       buildSidebar($('#battleSide'));
+    } else if (changed.has('battle')) {
+      refreshTokensTab($('#battleSide'));
     }
   });
 

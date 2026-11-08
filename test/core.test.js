@@ -432,3 +432,18 @@ test('monster portraits match token names, with overrides', () => {
   assert.equal(monsterArt({ name: 'Skeleton Archer 2' }).scene, true);
   assert.equal(monsterArt({ name: 'Skeleton' }).scene, false);
 });
+
+test('hiding and revealing a monster updates what players receive', () => {
+  const s = withParty();
+  const send = patch => {
+    const o = op({ type: 'battle.updateToken', id: 'gob', patch });
+    const before = inspectBefore(o, s);
+    applyOp(s, o);
+    return playerMessages(o, before, s);
+  };
+  assert.equal(send({ hidden: true })[0].op.type, 'battle.removeToken', 'players lose the hidden token');
+  assert.ok(!redactState(s).battle.tokens.gob);
+  const reveal = send({ hidden: false })[0].op;
+  assert.equal(reveal.type, 'battle.setTokens', 'players get the revealed token back');
+  assert.equal(reveal.tokens.gob.redacted, true, 'still without its stat block');
+});

@@ -46,6 +46,13 @@ export function buildSidebar(root) {
   }
 }
 
+// The token list reflects live positions/HP/hidden state, so it redraws on
+// battle changes — but only while open, since a rebuild would wipe the Log
+// tab's note input mid-typing
+export function refreshTokensTab(root) {
+  if (tab === 'tokens') buildSidebar(root);
+}
+
 function toolBtn(label, swatch, active, onclick, title) {
   return h('button', { class: 'tool-btn' + (active ? ' selected' : ''), onclick, title: title || label }, swatch, h('span', {}, label));
 }
@@ -270,7 +277,13 @@ function tokensTab() {
   }
 
   if (onMap.length) {
-    out.push(h('div', { class: 'section-title' }, 'On the map'));
+    const monsters = onMap.filter(isMonster);
+    const hiddenCount = monsters.filter(t => t.hidden).length;
+    out.push(h('div', { class: 'section-title row-title' }, 'On the map',
+      isDM() && monsters.length ? h('button', {
+        class: 'btn tiny', onclick: () => setMonstersHidden(monsters, !hiddenCount),
+        title: hiddenCount ? `Show all ${monsters.length} monster tokens to players` : 'Hide all monster tokens from players',
+      }, hiddenCount ? `👁 Reveal monsters (${hiddenCount} hidden)` : '🙈 Hide monsters') : null));
     for (const t of onMap) {
       if (t.hidden && !isDM()) continue;
       const v = tokenView(s, t);
@@ -282,6 +295,15 @@ function tokensTab() {
     }
   }
   return out;
+}
+
+// Monsters: anything that isn't a PC, on the party's side, or run by a player
+const isMonster = t => !t.charId && !t.owner && t.side !== 'party';
+
+function setMonstersHidden(monsters, hidden) {
+  const changed = monsters.filter(t => !!t.hidden !== hidden);
+  for (const t of changed) dispatch({ type: 'battle.updateToken', id: t.id, patch: { hidden } });
+  toast(`${changed.length} monster${changed.length === 1 ? '' : 's'} ${hidden ? 'hidden from' : 'revealed to'} players`);
 }
 
 export function placeTokenFromTemplate(tpl, c, r) {
