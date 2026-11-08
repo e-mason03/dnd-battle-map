@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { initialState, applyOp, canApply, redactState, playerMessages, inspectBefore, tokenView, redactSection, checkAttack } from '../public/js/core/ops.js';
 import { parseDice, roll } from '../public/js/core/dice.js';
 import { hexDistance, hexNeighbors, hexCenter, pixelToHex } from '../public/js/core/hexmath.js';
-import { parseActionLine, actionToLine, resolveAction } from '../public/js/core/actions.js';
+import { parseActionLine, actionToLine, resolveAction, parseActionText } from '../public/js/core/actions.js';
 import { parseDdbCharacter, extractDdbId } from '../public/js/core/ddb.js';
 
 const DM = { name: 'Dee', role: 'dm' };
@@ -713,4 +713,14 @@ test('hex paths: laying, removing, and 25% faster travel along them', () => {
   const seen = redactState(s).hex.hexes;
   assert.deepEqual(seen['3,0'].path, ['2,0', '4,0']);
   assert.equal(seen['2,0'], undefined);
+});
+
+import { MONSTER_TOKENS } from '../public/js/constants.js';
+
+test('Jackal template (MM / SRD stat block)', () => {
+  const j = MONSTER_TOKENS.find(m => m.type === 'jackal');
+  assert.deepEqual([j.label, j.hp, j.ac, j.speed, j.initBonus, j.saves.dex], ['Jackal', 3, 12, 40, 2, 2]);
+  const [bite] = parseActionText(j.actions);
+  assert.deepEqual([bite.name, bite.kind, bite.bonus, bite.damage, bite.dmgType, bite.range], ['Bite', 'melee', 1, '1d4-1', 'piercing', 5]);
+  assert.equal(new Set(MONSTER_TOKENS.map(m => m.type)).size, MONSTER_TOKENS.length, 'template types are unique');
 });

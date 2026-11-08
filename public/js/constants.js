@@ -70,7 +70,8 @@ export const PLAYER_TOKENS = [
   { type: 'artificer', label: 'Artificer', abbr: 'Ar', color: '#9c640c' },
 ];
 
-// Generic monsters come with a sensible default stat block (darkvision in ft)
+// Generic monsters come with a sensible default stat block (darkvision in ft;
+// initBonus defaults to +1, size to 1 = Medium or smaller)
 export const MONSTER_TOKENS = [
   { type: 'humanoid',    label: 'Bandit',      abbr: 'Hu', color: '#424949', hp: 11, ac: 12, actions: 'Scimitar | melee | 3 | 1d6+1 slashing | 5\nLight Crossbow | ranged | 3 | 1d8+1 piercing | 80' },
   { type: 'goblin',      label: 'Goblin',      abbr: 'Gb', color: '#4d6b2f', hp: 7, ac: 15, darkvision: 60, actions: 'Scimitar | melee | 4 | 1d6+2 slashing | 5\nShortbow | ranged | 4 | 1d6+2 piercing | 80' },
@@ -86,6 +87,8 @@ export const MONSTER_TOKENS = [
   { type: 'fiend',       label: 'Fiend',       abbr: 'Fn', color: '#7b241c', hp: 45, ac: 15, darkvision: 120, actions: 'Claw | melee | 6 | 2d6+4 slashing | 5\nHellfire | spell | 5 | 3d6 fire | 60' },
   { type: 'ooze',        label: 'Ooze',        abbr: 'Oz', color: '#1d8348', hp: 22, ac: 8, speed: 10, darkvision: 60, actions: 'Pseudopod | melee | 3 | 1d6+1 acid | 5' },
   { type: 'plant',       label: 'Plant',       abbr: 'Pl', color: '#145a32', hp: 30, ac: 12, actions: 'Vine Lash | melee | 4 | 1d8+2 bludgeoning | 10' },
+  { type: 'jackal',      label: 'Jackal',      abbr: 'Ja', color: '#a0743c', hp: 3, ac: 12, speed: 40, initBonus: 2,
+    saves: { str: -1, dex: 2, con: 0, int: -4, wis: 1, cha: -2 }, actions: 'Bite | melee | 1 | 1d4-1 piercing | 5' },
   { type: 'npc',         label: 'NPC',         abbr: 'NP', color: '#2e6b8a', hp: 10, ac: 10, actions: 'Club | melee | 2 | 1d4 bludgeoning | 5' },
 ];
 
@@ -94,7 +97,7 @@ export const ALL_TOKENS = [...PLAYER_TOKENS, ...MONSTER_TOKENS];
 // Monster portraits shown when hovering a token (public/img/monsters/<slug>.jpg).
 // To add one, drop a resized image in that folder and list its slug here.
 export const MONSTER_ART = {
-  'bandit': 'Bandit', 'death-dog': 'Death Dog', 'goblin': 'Goblin', 'green-hag': 'Green Hag', 'lich': 'Lich',
+  'bandit': 'Bandit', 'death-dog': 'Death Dog', 'goblin': 'Goblin', 'green-hag': 'Green Hag', 'jackal': 'Jackal', 'lich': 'Lich',
   'night-hag': 'Night Hag', 'skeleton': 'Skeleton', 'skeleton-archer': 'Skeleton Archer', 'vampire': 'Vampire',
   'vampire-spawn': 'Vampire Spawn', 'wolf': 'Wolf', 'zombie': 'Zombie',
 };

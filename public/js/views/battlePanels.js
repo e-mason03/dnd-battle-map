@@ -288,7 +288,9 @@ function tokensTab() {
   }
 
   if (canEdit()) {
-    out.push(h('div', { class: 'section-title' }, 'Monsters'),
+    const placingCustom = ui.tool.mode === 'place' && !!ui.tool.template.custom;
+    out.push(h('div', { class: 'section-title row-title' }, 'Monsters',
+        h('button', { class: 'btn tiny' + (placingCustom ? ' active' : ''), onclick: openCustomMonster, title: 'Make a monster with your own stats and place it' }, '＋ Custom')),
       isDM() ? h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: placeHidden, onchange: e => { placeHidden = e.target.checked; } }), 'Place hidden (only you see them)') : null,
       h('div', { class: 'grid-3' }, MONSTER_TOKENS.map(m =>
         toolBtn(m.label, h('div', { class: 'token-circle', style: { background: m.color } }, m.abbr),
@@ -316,6 +318,73 @@ function tokensTab() {
     }
   }
   return out;
+}
+
+const templateSize = m => m.size ?? (m.type === 'dragon' || m.type === 'giant' || m.type === 'monstrosity' ? 2 : 1);
+
+// ------------------------------------------------------------
+// Custom monster: a quick stat block, then place it like any template
+// ------------------------------------------------------------
+
+let lastCustom = null;   // the modal reopens with your last monster
+
+function openCustomMonster() {
+  const fromTemplate = m => ({
+    type: m.type, name: m.label, hp: m.hp, ac: m.ac, speed: m.speed || 30, size: templateSize(m), initBonus: m.initBonus ?? 1,
+    darkvision: m.darkvision || 0, color: m.color, side: 'enemy', saves: { ...(m.saves || {}) }, actions: m.actions || '', hidden: placeHidden,
+  });
+  const v = lastCustom || fromTemplate(MONSTER_TOKENS.find(m => m.type === 'humanoid') || MONSTER_TOKENS[0]);
+  const num = (val, attrs = {}) => h('input', { type: 'number', value: val ?? 0, ...attrs });
+  const f = {
+    name: h('input', { type: 'text', value: v.name, maxlength: 40 }),
+    hp: num(v.hp, { min: 1 }), ac: num(v.ac, { min: 0 }), speed: num(v.speed, { min: 0, step: 5 }),
+    initBonus: num(v.initBonus), darkvision: num(v.darkvision, { min: 0, step: 30 }),
+    size: h('select', {}, [1, 2, 3, 4].map(n => h('option', { value: n, selected: v.size === n }, ['Medium or smaller', 'Large', 'Huge', 'Gargantuan'][n - 1]))),
+    side: h('select', {}, ['enemy', 'neutral', 'party'].map(x => h('option', { value: x, selected: v.side === x }, x[0].toUpperCase() + x.slice(1)))),
+    type: h('select', {}, MONSTER_TOKENS.map(m => h('option', { value: m.type, selected: v.type === m.type }, m.label))),
+    color: h('input', { type: 'color', value: v.color }),
+    actions: h('textarea', { rows: 4, spellcheck: false }, v.actions),
+    hidden: h('input', { type: 'checkbox', checked: !!v.hidden }),
+  };
+  const saves = ABILITIES.map(k => num(v.saves?.[k] ?? 0, { title: k.toUpperCase() }));
+  // Starting from a built-in monster fills in its stats
+  const preset = h('select', { onchange: e => {
+    const m = MONSTER_TOKENS.find(x => x.type === e.target.value);
+    if (!m) return;
+    const t = fromTemplate(m);
+    for (const k of ['name', 'hp', 'ac', 'speed', 'initBonus', 'darkvision', 'size', 'type', 'color', 'actions']) f[k].value = t[k];
+    ABILITIES.forEach((k, i) => { saves[i].value = t.saves[k] ?? 0; });
+  } }, h('option', { value: '' }, '— keep current —'), MONSTER_TOKENS.map(m => h('option', { value: m.type }, `${m.label} (${m.hp} HP, AC ${m.ac})`)));
+
+  const m = openModal({
+    title: '＋ Custom monster',
+    wide: true,
+    body: h('div', { class: 'form-grid' },
+      h('div', { class: 'span2' }, field('Start from', preset)),
+      field('Name', f.name), field('Side', f.side),
+      field('HP', f.hp), field('AC', f.ac), field('Speed (ft)', f.speed), field('Size', f.size),
+      field('Initiative bonus', f.initBonus), field('Darkvision (ft)', f.darkvision),
+      field('Icon', f.type), field('Color', f.color),
+      h('div', { class: 'span2' },
+        h('div', { class: 'section-title' }, 'Saving throw bonuses'),
+        h('div', { class: 'saves-row' }, ABILITIES.map((k, i) => h('label', {}, h('small', {}, k.toUpperCase()), saves[i]))),
+        field('Actions', f.actions, 'One per line:  Name | melee/ranged/spell/save:dex/heal/auto | to-hit or DC | damage type | range ft | area | flags')),
+      isDM() ? h('label', { class: 'check span2' }, f.hidden, 'Place hidden (only you see them)') : null),
+    actions: [{ label: 'Cancel' }, {
+      label: 'Place on map', class: 'primary', onClick: () => {
+        const name = f.name.value.trim();
+        if (!name) { f.name.focus(); return false; }
+        lastCustom = {
+          type: f.type.value, name, hp: Math.max(1, +f.hp.value | 0), ac: Math.max(0, +f.ac.value | 0), speed: Math.max(0, +f.speed.value | 0),
+          size: +f.size.value, initBonus: +f.initBonus.value | 0, darkvision: Math.max(0, +f.darkvision.value | 0), color: f.color.value,
+          side: f.side.value, saves: Object.fromEntries(ABILITIES.map((k, i) => [k, +saves[i].value | 0])), actions: f.actions.value, hidden: f.hidden.checked,
+        };
+        setTool({ mode: 'place', template: { custom: lastCustom, name } });
+      },
+    }],
+  });
+  f.name.select();
+  return m;
 }
 
 // Monsters: anything that isn't a PC, on the party's side, or run by a player
@@ -346,13 +415,25 @@ export function placeTokenFromTemplate(tpl, c, r) {
       side: n.attitude === 'hostile' ? 'enemy' : n.attitude === 'ally' ? 'party' : 'neutral',
       actions: parseActionText(n.actions || ''), saves: n.saves || {}, conditions: [], hidden: placeHidden && isDM(),
     };
+  } else if (tpl.custom) {
+    const m = tpl.custom;
+    // Number copies: "Ghoul", "Ghoul 2", "Ghoul 3"…
+    const base = m.name.replace(/\s+\d+$/, '');
+    const isCopy = n => n === base || (n?.startsWith(base + ' ') && /^\d+$/.test(n.slice(base.length + 1)));
+    const same = Object.values(s.battle.tokens).filter(t => isCopy(t.name)).length;
+    token = {
+      id, type: m.type, name: same ? `${base} ${same + 1}` : base, col: c, row: r, size: m.size || 1,
+      color: m.color, hp: m.hp, maxHp: m.hp, ac: m.ac, speed: m.speed, initBonus: m.initBonus, side: m.side, darkvision: m.darkvision,
+      actions: parseActionText(m.actions), saves: { ...m.saves }, conditions: [], hidden: !!m.hidden && isDM(),
+    };
+    if (!isDM()) token.owner = store.me.name;
   } else {
     const m = MONSTER_TOKENS.find(x => x.type === tpl.monster) || MONSTER_TOKENS[0];
     const same = Object.values(s.battle.tokens).filter(t => t.type === m.type).length;
     token = {
-      id, type: m.type, name: same ? `${m.label} ${same + 1}` : m.label, col: c, row: r, size: m.type === 'dragon' ? 2 : m.type === 'giant' || m.type === 'monstrosity' ? 2 : 1,
-      color: m.color, hp: m.hp, maxHp: m.hp, ac: m.ac, speed: m.speed || 30, initBonus: 1, side: 'enemy', darkvision: m.darkvision || 0,
-      actions: parseActionText(m.actions), saves: {}, conditions: [], hidden: placeHidden && isDM(),
+      id, type: m.type, name: same ? `${m.label} ${same + 1}` : m.label, col: c, row: r, size: templateSize(m),
+      color: m.color, hp: m.hp, maxHp: m.hp, ac: m.ac, speed: m.speed || 30, initBonus: m.initBonus ?? 1, side: 'enemy', darkvision: m.darkvision || 0,
+      actions: parseActionText(m.actions), saves: { ...(m.saves || {}) }, conditions: [], hidden: placeHidden && isDM(),
     };
     if (!isDM()) token.owner = store.me.name;
   }
