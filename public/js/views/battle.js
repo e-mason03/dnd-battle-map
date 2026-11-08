@@ -7,6 +7,7 @@
 
 import { store, subscribe, onOp, dispatch, isDM, canEdit, myToken, avatarOf } from '../store.js';
 import { tokenView, healthFraction, healthLabel } from '../core/ops.js';
+import { monsterArtUrl } from '../constants.js';
 import { resolveAction, describeAction, unarmedStrike } from '../core/actions.js';
 import { rollD20 } from '../core/dice.js';
 import { uid, escapeHtml } from '../core/util.js';
@@ -34,7 +35,7 @@ const ui = {
   visible: false,
 };
 
-let canvas, ctx, wrap, tip, hotbar, initBar, banner;
+let canvas, ctx, wrap, tip, artCard, hotbar, initBar, banner;
 let dirty = true;
 let centered = false;
 let reachCache = null;
@@ -52,10 +53,11 @@ export function mountBattle(root) {
   canvas = h('canvas', { class: 'battle-canvas' });
   ctx = canvas.getContext('2d');
   tip = h('div', { class: 'map-tip' });
+  artCard = h('div', { class: 'art-card' }, h('img', { alt: '' }), h('div', { class: 'art-name' }));
   hotbar = h('div', { class: 'hotbar' });
   initBar = h('div', { class: 'init-bar' });
   banner = h('div', { class: 'turn-banner' });
-  wrap = h('div', { class: 'battle-stage' }, canvas, initBar, hotbar, tip, banner,
+  wrap = h('div', { class: 'battle-stage' }, canvas, initBar, hotbar, tip, artCard, banner,
     h('div', { class: 'map-hint', id: 'battleHint' }));
 
   const side = h('aside', { class: 'side-panel', id: 'battleSide' });
@@ -421,7 +423,7 @@ function bindInput() {
     if (d?.kind === 'token' && Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) > 4) d.moved = true;
 
     const inside = mx >= 0 && my >= 0 && mx <= rect.width && my <= rect.height;
-    if (!inside && !d) { if (ui.hover) { ui.hover = null; tip.style.display = 'none'; dirty = true; } return; }
+    if (!inside && !d) { if (ui.hover) { ui.hover = null; tip.style.display = 'none'; hideArt(); dirty = true; } return; }
 
     const { c, r, x, y } = screenToCell(mx, my);
     const t = inMap(c, r) ? tokenAt(c, r) : null;
@@ -430,6 +432,7 @@ function bindInput() {
     if (d?.kind === 'paint' && changed) paintAt(c, r, d.erase);
     if (changed) dirty = true;
     updateTip(e.clientX - rect.left, e.clientY - rect.top, t);
+    updateArt(mx, my, d?.kind === 'token' && d.moved ? null : t);
     $('#coordDisplay') && ($('#coordDisplay').textContent = inMap(c, r) ? `${colLabel(c)}${r + 1}` : '—');
   });
 
@@ -455,7 +458,7 @@ function bindInput() {
     dirty = true;
   });
 
-  canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; hideArt(); });
 
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
@@ -562,6 +565,29 @@ function updateTip(x, y, t) {
   tip.style.left = Math.min(x + 16, W() - 200) + 'px';
   tip.style.top = (y + 16) + 'px';
 }
+
+// Monster portrait card (1:2) shown while hovering a token that has art.
+// It sits above the cursor so it doesn't cover the stats tooltip below it.
+const ART_W = 150, ART_H = 300;
+
+function updateArt(x, y, t) {
+  const url = monsterArtUrl(t);
+  if (!url) { hideArt(); return; }
+  const img = artCard.firstChild;
+  if (artCard.dataset.url !== url) {
+    artCard.dataset.url = url;
+    img.src = url;
+  }
+  artCard.lastChild.textContent = t.name;
+  let left = x + 16, top = y - ART_H - 12;
+  if (top < 8) { left = x - ART_W - 16; top = y - ART_H / 2; }   // no room above: go left of the cursor
+  if (left + ART_W > W() - 8) left = x - ART_W - 16;
+  artCard.style.left = Math.max(8, left) + 'px';
+  artCard.style.top = Math.max(8, Math.min(top, H() - ART_H - 8)) + 'px';
+  artCard.style.display = 'flex';
+}
+
+function hideArt() { artCard.style.display = 'none'; }
 
 // ------------------------------------------------------------
 // Targeting

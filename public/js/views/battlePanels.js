@@ -8,7 +8,7 @@ import { tokenView, makeCells } from '../core/ops.js';
 import { parseActionText, actionsToText } from '../core/actions.js';
 import { rollD20 } from '../core/dice.js';
 import { uid, ABILITIES } from '../core/util.js';
-import { TERRAINS, ELEVATIONS, FEATURES, MONSTER_TOKENS, PLAYER_TOKENS, ALL_TOKENS, CONDITIONS, tokenDef } from '../constants.js';
+import { TERRAINS, ELEVATIONS, FEATURES, MONSTER_TOKENS, PLAYER_TOKENS, ALL_TOKENS, CONDITIONS, MONSTER_ART, tokenDef } from '../constants.js';
 import { h, toast, openModal, confirmDialog, promptDialog, field, pickFile, fmtTime } from '../ui/dom.js';
 import { uploadImage } from '../net.js';
 import { textureSwatch } from './textures.js';
@@ -374,6 +374,9 @@ export function openTokenEditor(id) {
   const side = h('select', {}, ['party', 'neutral', 'enemy'].map(x => h('option', { value: x, selected: (t.side || (pc ? 'party' : 'enemy')) === x }, x[0].toUpperCase() + x.slice(1))));
   const type = h('select', { disabled: pc }, ALL_TOKENS.map(d => h('option', { value: d.type, selected: t.type === d.type }, d.label)));
   const color = inp('color', v.color || tokenDef(t.type).color);
+  const art = h('select', { disabled: pc },
+    h('option', { value: '', selected: !t.art }, 'Auto (match name)'), h('option', { value: 'none', selected: t.art === 'none' }, 'None'),
+    Object.entries(MONSTER_ART).map(([slug, label]) => h('option', { value: slug, selected: t.art === slug }, label)));
   const hidden = h('input', { type: 'checkbox', checked: !!t.hidden });
   const owner = inp('text', t.owner || '', { placeholder: 'player name (optional)', disabled: pc });
   const saves = ABILITIES.map(k => inp('number', v.saves?.[k] ?? 0, { title: k.toUpperCase(), disabled: pc }));
@@ -389,6 +392,7 @@ export function openTokenEditor(id) {
     field('HP', hp), field('Max HP', maxHp), field('Temp HP', temp), field('AC', ac),
     field('Speed', speed), field('Initiative bonus', initB), field('Initiative', init), field('Size', size),
     field('Icon', type), field('Color', color),
+    pc ? null : field('Hover portrait', art),
     h('div', { class: 'span2' }, field('Conditions', condBox)),
     pc ? h('p', { class: 'span2 hint' }, 'Stats, saves and actions come from the character sheet (Party tab).') : h('div', { class: 'span2' },
       h('div', { class: 'section-title' }, 'Saving throw bonuses'),
@@ -413,7 +417,7 @@ export function openTokenEditor(id) {
             conditions: [...conds], side: side.value, color: color.value,
           };
           if (!pc) Object.assign(patch, {
-            name: name.value.trim() || 'Token', speed: +speed.value | 0, initBonus: +initB.value | 0, size: +size.value, type: type.value,
+            name: name.value.trim() || 'Token', speed: +speed.value | 0, initBonus: +initB.value | 0, size: +size.value, type: type.value, art: art.value || null,
             actions: parseActionText(actions.value), saves: Object.fromEntries(ABILITIES.map((k, i) => [k, +saves[i].value | 0])),
           });
           if (isDM() && !pc) patch.owner = owner.value.trim() || null;
