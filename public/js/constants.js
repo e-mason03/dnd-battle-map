@@ -99,7 +99,7 @@ export const ALL_TOKENS = [...PLAYER_TOKENS, ...MONSTER_TOKENS];
 // To add one, drop a resized image in that folder and list its slug here.
 export const MONSTER_ART = {
   'bandit': 'Bandit', 'death-dog': 'Death Dog', 'goblin': 'Goblin', 'green-hag': 'Green Hag', 'jackal': 'Jackal', 'lich': 'Lich',
-  'night-hag': 'Night Hag', 'skeleton': 'Skeleton', 'skeleton-archer': 'Skeleton Archer', 'vampire': 'Vampire',
+  'night-hag': 'Night Hag', 'ogre': 'Ogre', 'skeleton': 'Skeleton', 'skeleton-archer': 'Skeleton Archer', 'vampire': 'Vampire',
   'vampire-spawn': 'Vampire Spawn', 'wolf': 'Wolf', 'zombie': 'Zombie',
 };
 // Art painted as a full scene rather than on a white background; the card
