@@ -158,6 +158,8 @@ h3 { font-size: 15px; }
 .side-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
 .side-body { flex: 1; overflow-y: auto; padding: 10px 12px 20px; }
 .section-title { font-family: 'Cinzel', serif; font-size: 11px; font-weight: 600; color: var(--gold); letter-spacing: 1px; text-transform: uppercase; margin: 14px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.section-title.row-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.section-title.row-title .btn { font-family: 'Fira Sans', sans-serif; text-transform: none; letter-spacing: 0; font-weight: 500; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .grid-4 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .tool-btn { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px; background: rgba(15,52,96,0.45); border: 1px solid transparent; border-radius: 6px; cursor: pointer; font-size: 10.5px; color: var(--text2); }
