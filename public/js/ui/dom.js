@@ -39,7 +39,8 @@ export function toast(msg, isError = false) {
 export function openModal({ title, body, actions = [], wide = false, onClose }) {
   const overlay = h('div', { class: 'modal-overlay open' });
   const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); onClose?.(); };
-  const onKey = e => { if (e.key === 'Escape') close(); };
+  // Escape closes only the topmost modal when several are stacked
+  const onKey = e => { if (e.key === 'Escape' && [...document.querySelectorAll('.modal-overlay')].pop() === overlay) close(); };
   document.addEventListener('keydown', onKey);
   const modal = h('div', { class: 'modal' + (wide ? ' wide' : '') },
     h('div', { class: 'modal-head' }, h('h3', {}, title), h('button', { class: 'icon-btn', title: 'Close', onclick: close }, '✕')),

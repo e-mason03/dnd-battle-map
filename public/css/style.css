@@ -344,6 +344,38 @@ h3 { font-size: 15px; }
 .cc-death .pip.bad.on { background: var(--bad); }
 .cc-foot { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; border-top: 1px solid var(--border); padding-top: 8px; }
 
+/* ---------- Party inventory ---------- */
+.bag-btn { border-color: var(--gold); color: var(--gold); }
+.inv { display: flex; flex-direction: column; gap: 10px; padding-bottom: 6px; }
+.inv-sec { background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--gold); border-radius: 8px; scroll-margin-top: 4px; }
+.inv-sec.party { border-left-color: var(--gold); background: rgba(245,166,35,0.05); }
+.inv-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12px; }
+.inv-sec:not(.party) .inv-head { cursor: pointer; }
+.inv-caret { color: var(--muted); width: 10px; }
+.inv-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.inv-name { font-family: 'Cinzel', serif; font-size: 14px; color: var(--text); }
+.inv-name-icon { color: var(--gold); }
+.inv-head .tag { margin-left: 0; }
+.inv-gold { color: var(--gold); font-weight: 600; white-space: nowrap; }
+.inv-groups { padding: 0 10px 10px; border-top: 1px solid var(--border); }
+.inv-cat { font-family: 'Cinzel', serif; font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--gold); margin: 8px 0 4px; }
+.inv-none { color: var(--muted); font-size: 11px; font-style: italic; }
+.inv-item { display: flex; gap: 6px; align-items: flex-start; padding: 4px 6px; border-radius: 5px; font-size: 12px; }
+.inv-item:hover { background: rgba(255,255,255,0.04); }
+.inv-item.equipped { background: rgba(46,204,113,0.06); }
+.inv-iname { font-weight: 500; }
+.inv-iname.r-uncommon { color: #6fdc8c; }
+.inv-iname.r-rare { color: #6ab4f5; }
+.inv-iname.r-vrare { color: #c18cff; }
+.inv-iname.r-legendary { color: #f5a623; }
+.inv-iname.r-artifact { color: #ff7a6b; }
+.inv-qty { color: var(--text2); margin-left: 4px; font-size: 11px; }
+.inv-notes { color: var(--muted); font-size: 11px; line-height: 1.4; margin-top: 1px; white-space: pre-wrap; }
+.inv-ctl { display: flex; gap: 3px; flex-shrink: 0; align-items: center; opacity: .55; transition: opacity .1s; }
+.inv-item:hover .inv-ctl, .inv-ctl:focus-within { opacity: 1; }
+.inv-give { width: auto; font-size: 11px; padding: 1px 4px; max-width: 76px; }
+@media (hover: none) { .inv-ctl { opacity: 1; } }
+
 /* Journal */
 .journal-body { display: flex; flex-direction: column; gap: 14px; }
 .composer { display: flex; flex-direction: column; gap: 8px; }
